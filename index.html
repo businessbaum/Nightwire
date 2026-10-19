@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>NIGHTWIRE — NCIB Regional Analysis Terminal</title>
+
+<link rel="stylesheet" href="src/css/reset.css">
+<link rel="stylesheet" href="src/css/crt.css">
+<link rel="stylesheet" href="src/css/desktop.css">
+<link rel="stylesheet" href="src/css/apps.css">
+<link rel="stylesheet" href="src/css/docs.css">
+</head>
+<body>
+
+<!-- ══════════════════ PHYSICAL MONITOR ══════════════════ -->
+<div id="monitor">
+  <div id="screen">
+
+    <!-- Boot / login layer -->
+    <div id="boot-layer" class="layer"></div>
+
+    <!-- Desktop layer -->
+    <div id="desktop-layer" class="layer hidden">
+
+      <header id="topbar">
+        <div class="tb-left">
+          <span class="tb-brand">NCIB</span>
+          <span class="tb-sep">//</span>
+          <span class="tb-unit">REGIONAL ANALYSIS CENTER · PORT ALDEN</span>
+          <span class="tb-sep">//</span>
+          <span class="tb-term">TERMINAL 04</span>
+        </div>
+        <div class="tb-center">
+          <span id="tb-case">NO ACTIVE ASSIGNMENT</span>
+        </div>
+        <div class="tb-right">
+          <span id="tb-hdd" class="tb-led" title="Disk activity">▪</span>
+          <span id="tb-net" class="tb-led" title="Wire link">▪</span>
+          <span id="tb-user">—</span>
+          <span class="tb-sep">|</span>
+          <span id="tb-clock">--:--</span>
+          <span id="tb-date">--/--/--</span>
+        </div>
+      </header>
+
+      <div id="body">
+        <nav id="rail" aria-label="Program rail"></nav>
+        <main id="workspace">
+          <div id="wallpaper"></div>
+          <div id="windows"></div>
+          <div id="toasts"></div>
+        </main>
+      </div>
+
+      <footer id="statusbar">
+        <div class="sb-obj">
+          <span class="sb-key">TASK</span>
+          <span id="sb-objective">—</span>
+        </div>
+        <div class="sb-mid" id="sb-ticker"></div>
+        <div class="sb-right">
+          <span id="sb-hint" class="sb-btn" title="Request analytical assistance">? ASSIST</span>
+          <span id="sb-save" class="sb-btn">SAVE</span>
+          <span id="sb-mem">MEM 0K</span>
+        </div>
+      </footer>
+
+    </div>
+
+    <!-- Full-screen overlays (cutscenes, endings, alerts) -->
+    <div id="overlay-layer" class="layer hidden"></div>
+
+    <!-- CRT artifacts -->
+    <canvas id="noise"></canvas>
+    <div id="scanlines"></div>
+    <div id="vignette"></div>
+    <div id="flicker"></div>
+    <div id="glass"></div>
+  </div>
+  <div id="bezel">
+    <div class="bz-label">CONSOLIDATED ELECTRIC · MODEL VT-880 · AMBER</div>
+    <div class="bz-led"><i id="power-led"></i> POWER</div>
+  </div>
+</div>
+
+<div id="too-small">
+  <p>TERMINAL REQUIRES A LARGER DISPLAY</p>
+  <p class="dim">minimum 1024 × 620</p>
+</div>
+
+<!-- ══════════════════ ENGINE ══════════════════ -->
+<script src="src/js/engine/util.js"></script>
+<script src="src/js/engine/rng.js"></script>
+<script src="src/js/engine/bus.js"></script>
+<script src="src/js/engine/audio.js"></script>
+<script src="src/js/engine/state.js"></script>
+<script src="src/js/engine/gfx.js"></script>
+<script src="src/js/engine/windows.js"></script>
+<script src="src/js/engine/apps.js"></script>
+<script src="src/js/engine/typer.js"></script>
+<script src="src/js/engine/notify.js"></script>
+<script src="src/js/engine/clock.js"></script>
+<script src="src/js/engine/request.js"></script>
+<script src="src/js/engine/director.js"></script>
+<script src="src/js/engine/tutorial.js"></script>
+<script src="src/js/engine/crt.js"></script>
+
+<!-- ══════════════════ DATA ══════════════════ -->
+<script src="src/js/data/people.js"></script>
+<script src="src/js/data/vehicles.js"></script>
+<script src="src/js/data/documents.js"></script>
+<script src="src/js/data/media.js"></script>
+<script src="src/js/data/places.js"></script>
+<script src="src/js/data/calls.js"></script>
+<script src="src/js/data/evidence.js"></script>
+<script src="src/js/data/filesystem.js"></script>
+
+<!-- ══════════════════ APPS ══════════════════ -->
+<script src="src/js/apps/wire.js"></script>
+<script src="src/js/apps/registry.js"></script>
+<script src="src/js/apps/archive.js"></script>
+<script src="src/js/apps/daktylo.js"></script>
+<script src="src/js/apps/imagelab.js"></script>
+<script src="src/js/apps/audiolab.js"></script>
+<script src="src/js/apps/cartograph.js"></script>
+<script src="src/js/apps/cipher.js"></script>
+<script src="src/js/apps/casebook.js"></script>
+<script src="src/js/apps/timeline.js"></script>
+<script src="src/js/apps/switchboard.js"></script>
+<script src="src/js/apps/shell.js"></script>
+<script src="src/js/apps/microfilm.js"></script>
+<script src="src/js/apps/ballistics.js"></script>
+<script src="src/js/apps/notepad.js"></script>
+<script src="src/js/apps/manual.js"></script>
+<script src="src/js/apps/settings.js"></script>
+
+<!-- ══════════════════ STORY ══════════════════ -->
+<script src="src/js/story/ch0.js"></script>
+<script src="src/js/story/ch1.js"></script>
+<script src="src/js/story/ch2.js"></script>
+<script src="src/js/story/ch3.js"></script>
+<script src="src/js/story/ch4.js"></script>
+<script src="src/js/story/ch5.js"></script>
+<script src="src/js/story/ch6.js"></script>
+<script src="src/js/story/endings.js"></script>
+
+<!-- ══════════════════ BOOT ══════════════════ -->
+<script src="src/js/boot.js"></script>
+<script src="src/js/main.js"></script>
+</body>
+</html>

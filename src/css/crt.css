@@ -1,0 +1,230 @@
+/* ════════════════════════════════════════════════════════════
+   PHOSPHOR
+   Every colour the chrome uses comes from here. A theme sets the
+   phosphor, its rgb triplet (for the dozens of translucent washes),
+   the six surface greys and the tube's own glass tint. Nothing else
+   in the project hardcodes a colour.
+   ════════════════════════════════════════════════════════════ */
+:root {
+  --font-mono: "Consolas", "DejaVu Sans Mono", "Liberation Mono", "Courier New", monospace;
+  --font-doc: "Courier New", "Courier", monospace;
+
+  /* status colours hold steady across every theme — a red alert must
+     never be mistaken for a palette */
+  --green:       #6dfba6;
+  --green-dim:   #2f7c52;
+  --red:         #ff5340;
+  --red-dim:     #8f2a1e;
+  --violet:      #b98cff;
+  --on-red:      #150c08;
+  --on-green:    #0b1a10;
+
+  --paper:       #d9d0ba;
+  --paper-ink:   #2b2417;
+
+  --glow: 0 0 4px rgba(var(--phos-rgb), .42);
+  --glow-hi: 0 0 7px rgba(var(--hi-rgb), .7);
+
+  --scan-op: .22;
+  --noise-op: .0105;
+  --curve: 1;
+  --flick: .5;
+}
+
+/* ── ICE · cold monochrome, the institutional monitor ────────── */
+body, body.theme-ice {
+  --phos:       #c8d8de;
+  --phos-hi:    #f2fbfd;
+  --phos-mid:   #8ea3ab;
+  --phos-dim:   #566b74;
+  --phos-ghost: #2a373d;
+  --phos-rgb:   200,216,222;
+  --hi-rgb:     242,251,253;
+  --cyan:       #ffb63d;
+  --s0: #05080a; --s1: #080d10; --s2: #0c1317;
+  --s3: #101a1f; --s4: #16242a; --s5: #1e3138;
+  --shell-a: #12181c; --shell-b: #07090b; --shell-c: #040506;
+  --shell-ring: #1a2429; --shell-edge: #070a0c;
+  --led-off: #0e1a1f;
+}
+
+/* ── AMBER · the original tube ───────────────────────────────── */
+body.theme-amber {
+  --phos:       #ffb63d;
+  --phos-hi:    #ffe7b0;
+  --phos-mid:   #d8912c;
+  --phos-dim:   #8d5f1c;
+  --phos-ghost: #4a3413;
+  --phos-rgb:   255,182,61;
+  --hi-rgb:     255,214,140;
+  --cyan:       #58d7de;
+  --s0: #0a0805; --s1: #0c0906; --s2: #100c07;
+  --s3: #14100a; --s4: #1d150c; --s5: #2a1f0d;
+  --shell-a: #1a1712; --shell-b: #0a0908; --shell-c: #050404;
+  --shell-ring: #241d15; --shell-edge: #0e0b08;
+  --led-off: #2a1a08;
+}
+
+/* ── P1 · the green one ──────────────────────────────────────── */
+body.theme-green {
+  --phos:       #63e58f;
+  --phos-hi:    #b4ffce;
+  --phos-mid:   #3d9a5f;
+  --phos-dim:   #256039;
+  --phos-ghost: #10301d;
+  --phos-rgb:   99,229,143;
+  --hi-rgb:     180,255,206;
+  --cyan:       #ffc861;
+  --green:      #eafff2;
+  --green-dim:  #6fbf8f;
+  --on-green:   #08150d;
+  --s0: #040806; --s1: #060c08; --s2: #08110b;
+  --s3: #0b170f; --s4: #102215; --s5: #16301f;
+  --shell-a: #101a13; --shell-b: #060b07; --shell-c: #030604;
+  --shell-ring: #16281c; --shell-edge: #060b07;
+  --led-off: #0a1c11;
+}
+
+/* ── BONE · warm paper-white, the quiet one ──────────────────── */
+body.theme-bone {
+  --phos:       #ded7c9;
+  --phos-hi:    #fdf9f0;
+  --phos-mid:   #a49b89;
+  --phos-dim:   #6b6252;
+  --phos-ghost: #342f26;
+  --phos-rgb:   222,215,201;
+  --hi-rgb:     253,249,240;
+  --cyan:       #7ec8ff;
+  --s0: #0a0906; --s1: #0d0c09; --s2: #12100c;
+  --s3: #171510; --s4: #201d16; --s5: #2c281f;
+  --shell-a: #16140f; --shell-b: #090807; --shell-c: #050504;
+  --shell-ring: #201d16; --shell-edge: #0b0a08;
+  --led-off: #211d15;
+}
+
+body { --bg: var(--s0); --bg-panel: var(--s3); --bg-raised: var(--s4); }
+
+/* ── monitor shell ─────────────────────────────── */
+#monitor {
+  position: fixed; inset: 0;
+  display: flex; flex-direction: column;
+  background:
+    radial-gradient(ellipse at 50% 40%, var(--shell-a) 0%, var(--shell-b) 55%, var(--shell-c) 100%);
+  padding: 14px 14px 0;
+}
+
+#screen {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  background: var(--bg);
+  border-radius: calc(14px * var(--curve));
+  box-shadow:
+    inset 0 0 70px rgba(0,0,0,.72),
+    inset 0 0 200px rgba(var(--phos-rgb), .05),
+    0 0 0 2px var(--shell-ring),
+    0 0 0 6px var(--shell-edge),
+    0 0 34px rgba(var(--phos-rgb), .10);
+  transition: background .3s;
+}
+
+#bezel {
+  height: 26px;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 18px;
+  font-size: 9px; letter-spacing: .22em;
+  color: var(--phos-dim); opacity: .5; text-transform: uppercase;
+}
+.bz-led { display: flex; align-items: center; gap: 6px; }
+#power-led {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--led-off); display: inline-block;
+  transition: background .4s, box-shadow .4s;
+}
+#power-led.on { background: var(--phos); box-shadow: 0 0 8px var(--phos), 0 0 16px rgba(var(--phos-rgb), .5); }
+
+.layer { position: absolute; inset: 0; }
+
+/* ── artifacts ─────────────────────────────────── */
+#scanlines {
+  position: absolute; inset: 0; pointer-events: none; z-index: 9000;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0,0,0,0) 0px,
+    rgba(0,0,0,0) 1px,
+    rgba(0,0,0,.42) 2px,
+    rgba(0,0,0,.42) 3px);
+  opacity: var(--scan-op);
+  mix-blend-mode: multiply;
+}
+#scanlines::after {
+  content:''; position:absolute; left:0; right:0; height: 140px;
+  background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(var(--hi-rgb), .035), rgba(255,255,255,0));
+  animation: roll 9s linear infinite;
+}
+@keyframes roll { 0% { top: -160px; } 100% { top: 100%; } }
+
+#vignette {
+  position: absolute; inset: 0; pointer-events: none; z-index: 9001;
+  background:
+    radial-gradient(ellipse at center, rgba(0,0,0,0) 52%, rgba(0,0,0,.36) 88%, rgba(0,0,0,.72) 100%);
+}
+
+#glass {
+  position: absolute; inset: 0; pointer-events: none; z-index: 9002;
+  background:
+    linear-gradient(115deg, rgba(255,255,255,.045) 0%, rgba(255,255,255,0) 32%),
+    linear-gradient(295deg, rgba(255,255,255,.025) 0%, rgba(255,255,255,0) 26%);
+  border-radius: calc(14px * var(--curve));
+}
+
+#flicker {
+  position: absolute; inset: 0; pointer-events: none; z-index: 9003;
+  background: rgba(var(--phos-rgb), .035);
+  opacity: 0;
+  animation: flick 7s steps(1) infinite;
+}
+@keyframes flick {
+  0%,96%   { opacity: 0; }
+  96.5%    { opacity: calc(.5 * var(--flick)); }
+  97%      { opacity: 0; }
+  97.4%    { opacity: calc(.28 * var(--flick)); }
+  98%,100% { opacity: 0; }
+}
+
+#noise {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  pointer-events: none; z-index: 8999;
+  opacity: var(--noise-op);
+  mix-blend-mode: screen;
+  image-rendering: pixelated;
+}
+
+/* global screen shake / glitch */
+@keyframes shake {
+  0%,100% { transform: translate(0,0); }
+  20% { transform: translate(-3px, 2px); }
+  40% { transform: translate(3px, -1px); }
+  60% { transform: translate(-2px, -2px); }
+  80% { transform: translate(2px, 1px); }
+}
+#screen.shake { animation: shake .32s linear 2; }
+
+@keyframes desync {
+  0%,100% { filter: none; }
+  30% { filter: hue-rotate(-24deg) saturate(1.6); transform: translateX(-4px) skewX(.6deg); }
+  55% { filter: hue-rotate(18deg); transform: translateX(5px) skewX(-.5deg); }
+  75% { filter: none; transform: translateX(-2px); }
+}
+#desktop-layer.desync { animation: desync .45s steps(3) 1; }
+
+#too-small {
+  position: fixed; inset: 0; z-index: 99999; display: none;
+  flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; background: var(--s0); color: var(--phos);
+  letter-spacing: .2em; font-size: 13px; text-align: center;
+}
+@media (max-width: 1023px), (max-height: 619px) {
+  #too-small { display: flex; }
+  #monitor { display: none; }
+}

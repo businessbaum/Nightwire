@@ -1,0 +1,40 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: #000;
+  color: var(--phos);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+  text-rendering: optimizeSpeed;
+}
+
+button, input, select, textarea {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  outline: none;
+}
+
+button { cursor: pointer; }
+
+::selection { background: var(--phos); color: var(--s0); }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: rgba(var(--phos-rgb), .05); }
+::-webkit-scrollbar-thumb {
+  background: rgba(var(--phos-rgb), .28);
+  border: 1px solid rgba(var(--phos-rgb), .45);
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(var(--phos-rgb), .5); }
+::-webkit-scrollbar-corner { background: transparent; }
+
+.hidden { display: none !important; }
+.dim { opacity: .55; }
+.nosel { user-select: none; -webkit-user-select: none; }
