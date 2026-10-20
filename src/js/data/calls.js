@@ -1,6 +1,6 @@
 /* NIGHTWIRE — data/calls.js
-   The switchboard. Numbers appear all over the case file; most of them ring
-   out. The ones that answer will tell you things nobody wrote down. */
+   Switchboard numbers. Each live line has a greeting and topics; a topic can
+   require a document or evidence first, and can give something back. */
 (function (NW) {
   'use strict';
   var has = function (f) { return NW.state.has(f); };
@@ -114,8 +114,11 @@
         a: [
           { s: 'TREVINO', l: "Second floor, north end. It's on some nights until three." },
           { s: 'TREVINO', l: "There's a man sleeps up there. Big. Drives a grey van. He's the one they pay to watch the place, which is funny, because I'm the one they pay to watch the place." },
+          { s: 'TREVINO', l: "He never comes down the stairs, either. There's a fire escape off the north gable that drops into the yard, and that's where he keeps the van. Nose out, always." },
           { s: 'TREVINO', l: "I don't go past the stairs anymore." }
-        ] },
+        ],
+        gives: { flag: 'knows_fire_escape',
+          fact: { c: 'MILL', t: 'The man in the mill office leaves by the fire escape on the north gable. It drops to the yard where his grey van is parked.' } } },
       { id: 'warn', q: 'Warn him to stay out of the building tonight.',
         requires: function () { return NW.state.s.chapter >= 3; },
         a: [

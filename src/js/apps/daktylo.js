@@ -1,6 +1,6 @@
 /* NIGHTWIRE — apps/daktylo.js
-   Ridge comparison. The latent and a true candidate are the same print under
-   a rigid transform; the operator has to find the pairs by eye. */
+   Ridge comparison. The latent and the true candidate are the same print,
+   rotated and shifted; the operator pairs the points by eye. */
 (function (NW) {
   'use strict';
   var U = NW.util, el = U.el;
@@ -16,7 +16,7 @@
       candidates: ['p_lindqvist', 'p_vance', 'p_darrow', 'p_okafor'],
       correct: 'p_vance',
       onIdent: 'print_ident_quarry',
-      onExclude: null
+      evidence: 'ev_printmatch'
     },
     cmp_mill: {
       id: 'cmp_mill', label: 'M-4 · MILL OFFICE DOOR PLATE · L. INDEX',
@@ -26,6 +26,7 @@
       onIdent: 'print_ident_mill'
     }
   };
+  var NEED = 6;   // pairs required for an identification
 
   var cache = {};
   function print(seed) {
@@ -175,9 +176,7 @@
       pr.draw(g, CW, CH, { color: TH(), width: 1.5, transform: t });
       rightHead.innerHTML = '<span>' + U.esc(p.name) + '</span><span>' + pr.pattern.toUpperCase() + '</span>';
 
-      // Once two correspondences are established the alignment is known, so the
-      // program can point at where the selected feature ought to be. The first
-      // two pairs are the examination; the rest is bookkeeping.
+      // after two pairs the alignment is known, so predict where the selected point lands
       if (state.selLeft !== null && state.pairs.length >= 2) {
         var lm = latentPrint().minutiae[state.selLeft];
         if (lm) {
@@ -291,7 +290,7 @@
 
     function renderScore() {
       U.clear(score);
-      var NEED = 6;
+      if (!state.cmp) return;
       var n = state.pairs.length;
       var total = state.candidate ? Math.min(latentPrint().minutiae.length, candPrint().minutiae.length) : 12;
       var pct = Math.min(100, Math.round(n / NEED * 100));
@@ -313,8 +312,8 @@
       score.appendChild(msg);
 
       var bar = el('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } });
-      var ident = el('button.btn.good', { text: '▣ RECORD IDENTIFICATION' });
-      ident.disabled = n < NEED;
+      var ident = el('button.btn.good', { text: state.done ? '✓ IDENTIFICATION RECORDED' : '▣ RECORD IDENTIFICATION' });
+      ident.disabled = n < NEED || state.done;
       U.on(ident, 'click', function () { conclude(true); });
       var excl = el('button.btn.danger', { text: '▢ RECORD EXCLUSION' });
       excl.disabled = state.bad < 3 && n < 1;
@@ -341,7 +340,7 @@
       if (identified && truth) {
         NW.audio.play('good');
         NW.state.unlock('records', p.id, true);
-        NW.state.addEvidence('ev_printmatch');
+        if (state.cmp.evidence) NW.state.addEvidence(state.cmp.evidence);
         NW.state.addFact('DAKTYLO', 'Latent ' + state.cmp.label.split('·')[0].trim() + ' identifies to ' + p.name + ' — ' + state.pairs.length + ' corresponding points.');
         NW.state.flag(state.cmp.onIdent, p.id);
         NW.notify.push({ head: 'IDENTIFICATION', body: p.name, kind: 'good', ms: 6000 });
@@ -366,6 +365,31 @@
       renderScore();
     }
 
+    /** Load a candidate card sent from the registry, switching latent if needed. */
+    function loadCandidate(pid) {
+      if (!state.cmp || state.cmp.candidates.indexOf(pid) === -1) {
+        var k = Object.keys(COMPARISONS).filter(function (id) {
+          return S().flags['latent_' + id] && COMPARISONS[id].candidates.indexOf(pid) !== -1;
+        }).pop();
+        if (!k) {
+          NW.notify.push({ head: 'NOT A CANDIDATE', body: 'That card is not in the candidate set for any latent on this terminal.', kind: 'info' });
+          return;
+        }
+        setComparison(k);
+      }
+      state.candidate = pid; state.pairs = []; state.selLeft = null; state.bad = 0; state.done = false;
+      renderTools(); renderAll();
+    }
+
+    // a new latent can arrive while the program is open; requests change the buttons
+    win.listen('flag', function (d) {
+      if (!/^latent_/.test(d.key)) return;
+      if (!state.cmp) setComparison(d.key.slice(7)); else renderTools();
+    });
+    win.listen('request:open', function () { if (state.cmp) renderScore(); });
+    win.listen('request:close', function () { if (state.cmp) renderScore(); });
+    win.loadCandidate = loadCandidate;
+
     // pick a comparison
     var want = (arg && arg.cmp) || null;
     var avail = Object.keys(COMPARISONS).filter(function (k) { return S().flags['latent_' + k]; });
@@ -373,15 +397,14 @@
     else if (avail.length) setComparison(avail[avail.length - 1]);
     else { renderTools(); renderAll(); }
 
-    if (arg && arg.candidate && state.cmp && state.cmp.candidates.indexOf(arg.candidate) !== -1) {
-      state.candidate = arg.candidate; renderTools(); renderAll();
-    }
+    if (arg && arg.candidate) loadCandidate(arg.candidate);
   }
 
   NW.apps.define({
     id: 'daktylo', name: 'DAKTYLO', short: 'PRINTS', icon: 'daktylo',
     hint: 'latent ridge comparison',
     win: { w: 700, h: 620, min: [660, 540], resizable: false },
-    build: build
+    build: build,
+    onFocus: function (win, arg) { if (arg && arg.candidate && win.loadCandidate) win.loadCandidate(arg.candidate); }
   });
 })(window.NW);

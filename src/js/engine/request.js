@@ -1,7 +1,6 @@
 /* NIGHTWIRE — engine/request.js
-   Formal information requests from the field. The operator answers them by
-   TRANSMITTING records, documents, places or vehicles out of the other
-   programs, or by typing a value directly. */
+   Information requests from the field. Slots are filled by transmitting items
+   from other programs, typing a value, or picking a statement. */
 (function (NW) {
   'use strict';
   var U = NW.util, el = U.el;
@@ -15,7 +14,7 @@
    *  slots: [{id, label, accept:['person'|'doc'|'place'|'vehicle'|'evidence'],
    *           type:'slot'|'text'|'choice', options:[{v,l}], placeholder}]
    *  answer: { slotId: 'value' | ['a','b'] }        (case-insensitive for text)
-   *  onCorrect(filled), onWrong(filled, wrongSlots), attempts
+   *  onCorrect(filled), onWrong(filled, wrongSlots, tries), cancellable
    */
   function open(spec) {
     active = { spec: spec, filled: {}, tries: 0 };
@@ -58,8 +57,7 @@
     active.filled[target.id] = { kind: kind, id: id, label: label };
     NW.audio.play('relay');
     NW.notify.push({ head: 'ATTACHED', body: target.label + ' ← ' + label, kind: 'info', ms: 2200 });
-    // it went out over the wire, so it belongs in the log like anything else
-    if (NW.wire) NW.wire.push({ sys: '▸ attached to ' + target.label + ' — ' + label, delay: 0 });
+    if (NW.wire) NW.wire.push({ sys: '▸ attached to ' + target.label + ' — ' + label, thread: NW.wire.awaiting() || undefined, delay: 0 });
     NW.bus.emit('request:change');
     return true;
   }
@@ -94,8 +92,7 @@
     }
     active.tries++;
 
-    /* The report is a thing the operator sends, so it goes on the wire in
-       their own hand, with whatever was attached to it. */
+    // echo the report onto the wire, with its attachments
     var atts = [];
     var lines = spec.slots.map(function (s) {
       var g = active.filled[s.id];
@@ -107,6 +104,7 @@
     if (NW.wire) {
       NW.wire.push({
         me: '▶ REPORT TRANSMITTED — ' + spec.title + '\n' + lines,
+        thread: NW.wire.awaiting() || undefined,   // back to whoever asked
         atts: atts, delay: 0
       });
     }
@@ -180,13 +178,13 @@
         return;
       }
 
-      /* ── pick one of several statements: written as replies, not as a form ── */
+      /* ── pick one statement, shown as replies ── */
       if (s.type === 'choice') {
         var opts = (typeof s.options === 'function' ? s.options() : s.options) || [];
         var block = el('div.req-choice');
         block.appendChild(el('div.rc-l', { text: (spec.slots.length > 1 ? (si + 1) + '. ' : '') + s.label }));
         if (opts.length > 7) {
-          // too many to read as buttons — a full-width list instead
+          // too many for buttons: use a dropdown
           var sel = el('select.input.rc-select');
           sel.appendChild(el('option', { value: '', text: '— SELECT —' }));
           opts.forEach(function (o) {
@@ -216,7 +214,7 @@
         return;
       }
 
-      /* ── an item transmitted out of another program ── */
+      /* ── an item transmitted from another program ── */
       var row2 = el('div.req-slot' + (got ? '.filled' : ''));
       row2.appendChild(el('span.rs-l', { text: (spec.slots.length > 1 ? (si + 1) + '. ' : '') + s.label }));
       row2.appendChild(el('span', {

@@ -1,5 +1,4 @@
-/* NIGHTWIRE — apps/wire.js
-   The internal messaging bus. This is where the night happens. */
+/* NIGHTWIRE — apps/wire.js — the message bus; most of the story happens here */
 (function (NW) {
   'use strict';
   var U = NW.util, el = U.el;
@@ -17,14 +16,13 @@
 
   var currentThread = 'solt';
   var ui = null;              // { list, log, head, reply, typing }
-  var pendingAsk = null;      // { spec, resolve, thread } — a reply belongs to one channel
-  var requestThread = null;   // and so does an open information request
-  var activeType = null;      // id of the message currently being typed out
+  var pendingAsk = null;      // { spec, resolve, thread }
+  var requestThread = null;   // channel the open request belongs to
+  var activeType = null;      // id of the message being typed out
+  var visibleOpts = [];       // reply options on screen, in key order
 
-  /* Message ids address the DOM node the typewriter writes into, so they have
-     to stay unique across a restored shift. A counter that restarted at 1 every
-     reload collided with the saved traffic and the animation ended up writing
-     into an old bubble while the new one stayed empty. */
+  /* Message ids must stay unique across a restored shift, because the typing
+     animation finds its bubble by id. */
   function nextId() {
     var s = S();
     if (!s.msgSeq) {
@@ -54,11 +52,10 @@
     return contactsVisible().reduce(function (n, k) { return n + (thread(k).unread || 0); }, 0);
   }
 
-  /* ══════════ public API used by the director ══════════ */
+  /* ══════════ API used by the director ══════════ */
 
-  /* On resuming a restored shift the director re-enters the step it was parked
-     on. If that step was a message that had already landed, do not say it
-     twice. Armed once, spent on the next push. */
+  /* After a restore the director re-runs the step it was parked on. If that
+     message already landed, don't send it twice (checked once, on the next push). */
   var resumeDedupe = false;
   function armDedupe() { resumeDedupe = true; }
 
@@ -68,17 +65,19 @@
     var isSys = step.sys !== undefined;
     var text = isMe ? step.me : isSys ? step.sys : step.text;
     var tid = isMe || isSys ? (step.thread || currentThread) : who;
+    var contact = CONTACTS[who];
 
     if (!isMe && !isSys) {
-      currentThread = who;
-      if (!S().contacts[who] && !CONTACTS[who].always) S().contacts[who] = true;
+      // a channel waiting on the operator keeps the screen; others just go unread
+      if (awaitingThread() !== currentThread) currentThread = who;
+      if (!S().contacts[who] && !(contact && contact.always)) S().contacts[who] = true;
     }
 
     var m = {
       id: nextId(),
       from: isMe ? 'me' : isSys ? 'sys' : who,
       text: text,
-      cls: step.cls || (CONTACTS[who] && CONTACTS[who].ghost ? 'ghost' : ''),
+      cls: step.cls || (contact && contact.ghost ? 'ghost' : ''),
       at: U.fmtTime(S().clock),
       att: step.att || null,
       atts: step.atts && step.atts.length ? step.atts : null
@@ -94,11 +93,11 @@
     }
 
     var pre = step.delay === undefined ? (isMe || isSys ? 200 : 500) : step.delay;
-    // a beat of "…is transmitting" before the words start arriving
+    // "…is transmitting" before the words start arriving
     var thinkMs = isMe || isSys ? 0 : Math.min(1100, 320 + String(text).length * 4);
 
     return U.wait(pre).then(function () {
-      if (!isMe && !isSys) { showTyping(tid, who); }
+      if (!isMe && !isSys) showTyping(tid, who);
       return U.wait(thinkMs);
     }).then(function () {
       hideTyping();
@@ -108,7 +107,7 @@
       }
       if (!isMe && !isSys) {
         NW.audio.play(m.cls === 'alert' ? 'alert' : 'msg');
-        if (CONTACTS[who] && CONTACTS[who].ghost) NW.audio.play('glitch');
+        if (contact && contact.ghost) NW.audio.play('glitch');
       }
       NW.bus.emit('wire:msg', m);
       if (NW.state.settings().autoOpen && !NW.win.isOpen('wire') && !isMe && !isSys) {
@@ -121,14 +120,12 @@
     });
   }
 
-  /* ── the words arrive one at a time, like they are being typed ── */
+  /* ── messages type themselves out ── */
   function typeMessage(m, tid) {
     return new Promise(function (resolve) {
       var st = NW.state.settings();
       var speed = st.wireSpeed === undefined ? 0.7 : st.wireSpeed;
       var text = String(m.text);
-      // the wire obeys its own speed setting only — the teletype slider is for
-      // the boot sequence and the printer
       if (speed >= 3 || !text.length) { render(); return resolve(); }
 
       var cps = (m.from === 'me' ? 85 : m.from === 'sys' ? 120 : 55) * speed;
@@ -139,8 +136,7 @@
       render();
 
       var iv = setInterval(function () {
-        // something else started typing — land this one whole rather than
-        // leaving it stranded mid-sentence
+        // another message started (or the log was clicked): land this one whole
         if (activeType !== m.id) {
           clearInterval(iv);
           m.typing = false; m._shown = null;
@@ -157,14 +153,14 @@
         if (done) {
           clearInterval(iv);
           m.typing = false; m._shown = null; activeType = null;
-          if (!node) render();      // never leave a message stranded empty
+          if (!node) render();
           resolve();
         }
       }, 1000 / 30);
     });
   }
 
-  /** Finish whatever is typing right now — used when the operator clicks. */
+  /** Finish whatever is typing right now (the operator clicked the log). */
   function flushTyping() {
     if (activeType === null) return false;
     activeType = null;
@@ -173,13 +169,12 @@
     return true;
   }
 
-  /** ask({prompt, options:[{label, steps, flag, set, gives}]}) → Promise */
+  /** ask({prompt, timer, options:[{label, reply, steps, flag, set, choice, value, evidence, when}], timeoutOption}) → Promise */
   function ask(spec) {
     return new Promise(function (resolve) {
       pendingAsk = { spec: spec, resolve: resolve, thread: currentThread };
       if (!NW.win.isOpen('wire')) NW.apps.open('wire');
-      // the clock on a timed decision runs whether or not that channel is the
-      // one on screen — the field is not waiting for the operator's attention
+      // a timed decision counts down whether or not its channel is on screen
       if (spec.timer) startTimer(spec);
       render(); updateBadge();
       NW.audio.play('beep');
@@ -195,23 +190,22 @@
 
   function chooseOption(opt) {
     var p = pendingAsk;
+    if (!p) return;             // already answered (timer and click can race)
     pendingAsk = null;
+    stopTimer();
     NW.audio.play('click');
     var steps = [];
-    // the answer goes back to the person who asked, not to whatever channel
-    // happens to be on screen
+    // the reply goes to whoever asked, not to the channel on screen
     if (opt.reply !== false) steps.push({ me: opt.reply || opt.label, thread: p.thread, delay: 100 });
     if (opt.flag) NW.state.flag(opt.flag, true);
     if (opt.set) Object.keys(opt.set).forEach(function (k) { NW.state.flag(k, opt.set[k]); });
     if (opt.choice) S().choices[opt.choice] = opt.value === undefined ? true : opt.value;
     if (opt.evidence) [].concat(opt.evidence).forEach(function (e) { NW.state.addEvidence(e); });
     render();
-    var tail = opt.steps || [];
-    // run the reply + branch through the director so nesting behaves
-    p.resolve({ steps: steps.concat(tail) });
+    // the director runs the reply and the branch
+    p.resolve({ steps: steps.concat(opt.steps || []) });
   }
 
-  var typingTimer = null;
   function showTyping(tid, who) {
     if (!ui || tid !== currentThread) return;
     ui.typing.textContent = (CONTACTS[who] ? CONTACTS[who].name : who) + ' IS TRANSMITTING…';
@@ -222,8 +216,13 @@
 
   function updateBadge() {
     var n = totalUnread();
-    if (!n && awaitingThread()) n = 1;      // a waiting reply is unfinished business
+    if (!n && awaitingThread()) n = 1;      // a waiting reply counts as unread
     NW.apps.badge('wire', n);
+  }
+
+  function switchTo(k) {
+    currentThread = k; thread(k).unread = 0;
+    NW.audio.play('click'); render(); updateBadge();
   }
 
   /* ══════════ rendering ══════════ */
@@ -231,9 +230,7 @@
   function scroll() {
     if (ui && ui.log) ui.log.scrollTop = ui.log.scrollHeight;
   }
-  /* The reply panel changes height as it fills, which steals room from the log
-     and leaves the newest message hidden behind it. Re-pin to the bottom once
-     the layout has actually settled. */
+  // the reply panel changes height as it fills; re-pin once layout settles
   function scrollSoon() {
     scroll();
     requestAnimationFrame(function () { scroll(); requestAnimationFrame(scroll); });
@@ -261,10 +258,7 @@
       ]);
       if (c.ghost) row.style.color = 'var(--violet)';
       if (c.danger) row.style.borderLeft = '2px solid var(--red-dim)';
-      U.on(row, 'click', function () {
-        currentThread = k; thread(k).unread = 0;
-        NW.audio.play('click'); render(); updateBadge();
-      });
+      U.on(row, 'click', function () { switchTo(k); });
       ui.list.appendChild(row);
     });
     ui.list.appendChild(el('div.sec-h', { text: 'LINK' }));
@@ -285,7 +279,7 @@
     }
     msgs.forEach(function (m) {
       var kind = m.from === 'me' ? 'me' : m.from === 'sys' ? 'sys' : '';
-      // a message left mid-type by a reload is just finished
+      // a message left mid-type by a reload is simply finished
       var typing = m.typing && activeType === m.id;
       if (m.typing && !typing) { m.typing = false; m._shown = null; }
       var node = el('div.msg', { class: kind + ' ' + (m.cls || '') + (typing ? ' typing' : ''),
@@ -295,11 +289,10 @@
           text: (m.from === 'me' ? 'TERMINAL 04' : (CONTACTS[m.from] ? CONTACTS[m.from].name : m.from)) + '  ·  ' + m.at
         }));
       }
-      var body = el('div.m-body', { text: typing ? (m._shown || '') : m.text });
-      node.appendChild(body);
+      node.appendChild(el('div.m-body', { text: typing ? (m._shown || '') : m.text }));
       if (!typing) {
         [].concat(m.att || [], m.atts || []).forEach(function (att) {
-          node.appendChild(attachmentCard(att, m));
+          node.appendChild(attachmentCard(att));
         });
       }
       ui.log.appendChild(node);
@@ -318,8 +311,7 @@
     vehicle:{ ico: '⬒', k: 'VEHICLE',    go: 'OPEN IN REGISTRY' }
   };
 
-  /** Attachments are the point of half these messages — make them look it. */
-  function attachmentCard(att, m) {
+  function attachmentCard(att) {
     var k = ATT_KIND[att.kind] || ATT_KIND.doc;
     var seen = S().flags['att_seen_' + att.kind + '_' + att.id];
     var card = el('div.m-att' + (seen ? '' : '.fresh'), null, [
@@ -344,16 +336,17 @@
     else if (att.kind === 'photo') { NW.state.flag('photo_' + att.id, true); NW.apps.open('imagelab', att.id); }
     else if (att.kind === 'audio') { NW.state.flag('audio_' + att.id, true); NW.apps.open('audiolab', att.id); }
     else if (att.kind === 'person') { NW.state.unlock('records', att.id, true); NW.apps.open('registry', att.id); }
+    else if (att.kind === 'vehicle') { NW.apps.open('registry', att.id); }
     else if (att.kind === 'print') { NW.apps.open('daktylo', att.id); }
     else if (att.kind === 'app') { NW.apps.open(att.id); }
   }
 
   function renderReply() {
     U.clear(ui.reply);
+    visibleOpts = [];
 
     var waiting = awaitingThread();
-    /* A reply is addressed to one person. Showing it on every channel means it
-       gets typed into the wrong conversation. */
+    // a reply belongs to one channel; elsewhere, offer to jump to it
     if (waiting && waiting !== currentThread) {
       var who = CONTACTS[waiting] ? CONTACTS[waiting].name : waiting;
       var jump = el('button.reply-opt.awaiting-jump', null, [
@@ -361,17 +354,13 @@
         el('span', { text: who + ' IS WAITING ON YOUR REPLY — SWITCH TO THAT CHANNEL  ' }),
         el('span.aj-t', { style: { color: 'var(--red)', fontWeight: 'bold' }, text: '' })
       ]);
-      U.on(jump, 'click', function () {
-        currentThread = waiting; thread(waiting).unread = 0;
-        NW.audio.play('click'); render(); updateBadge();
-      });
+      U.on(jump, 'click', function () { switchTo(waiting); });
       ui.reply.appendChild(jump);
       paintTimer();
       return;
     }
 
-    var req = NW.request.current();
-    if (req && requestThread === currentThread) { NW.request.render(ui.reply); }
+    if (NW.request.current() && requestThread === currentThread) NW.request.render(ui.reply);
 
     if (pendingAsk && pendingAsk.thread === currentThread) {
       var spec = pendingAsk.spec;
@@ -381,13 +370,14 @@
         paintTimer();
       }
       if (spec.prompt) ui.reply.appendChild(el('div', { class: 'dim', style: { fontSize: '10px', letterSpacing: '.16em', marginBottom: '6px', textTransform: 'uppercase' }, text: spec.prompt }));
-      spec.options.forEach(function (o, i) {
+      spec.options.forEach(function (o) {
         if (o.when && !NW.state.test(o.when)) return;
+        visibleOpts.push(o);
         var b = el('button.reply-opt', null, [
-          el('span.ro-n', { text: (i + 1) + '.' }),
+          el('span.ro-n', { text: visibleOpts.length + '.' }),
           el('span', { text: o.label })
         ]);
-        U.on(b, 'click', function () { stopTimer(); chooseOption(o); });
+        U.on(b, 'click', function () { chooseOption(o); });
         ui.reply.appendChild(b);
       });
     }
@@ -395,6 +385,16 @@
       ui.reply.appendChild(el('div', { class: 'dim', style: { fontSize: '10px', letterSpacing: '.14em', textTransform: 'uppercase' },
         text: '— NO REPLY REQUIRED —' }));
     }
+  }
+
+  /* number keys pick a reply; Enter sends a single-option reply */
+  function onKey(e) {
+    if (!pendingAsk || !visibleOpts.length) return false;
+    var n = /^[1-9]$/.test(e.key) ? parseInt(e.key, 10) : (e.key === 'Enter' && visibleOpts.length === 1 ? 1 : 0);
+    var opt = visibleOpts[n - 1];
+    if (!opt) return false;
+    chooseOption(opt);
+    return true;
   }
 
   /* ── timed choices ── */
@@ -408,10 +408,10 @@
       paintTimer();
       if (timerState.left <= 0) {
         stopTimer();
-        var dflt = spec.options.filter(function (o) { return o.onTimeout; })[0] || spec.options[spec.options.length - 1];
         NW.notify.push({ head: 'WINDOW CLOSED', body: 'The field acted without you.', kind: 'bad' });
-        if (spec.timeoutOption) chooseOption(spec.timeoutOption);
-        else chooseOption(Object.assign({}, dflt, { reply: dflt.reply || '(no response sent)' }));
+        if (spec.timeoutOption) { chooseOption(spec.timeoutOption); return; }
+        var dflt = spec.options.filter(function (o) { return o.onTimeout; })[0] || spec.options[spec.options.length - 1];
+        chooseOption(Object.assign({}, dflt, { reply: dflt.reply || '(no response sent)' }));
       }
     }, 100);
   }
@@ -443,14 +443,15 @@
       body.appendChild(el('div.app', null, [el('div.app-row', null, [list, thr])]));
       U.on(log, 'click', function (e) {
         if (e.target.closest('.m-att')) return;
-        flushTyping();               // click the log to let the rest of it land at once
+        flushTyping();
       });
       ui = { list: list, head: head, log: log, reply: reply, typing: typing };
       thread(currentThread).unread = 0;
       render(); updateBadge();
     },
     onFocus: function () { thread(currentThread).unread = 0; render(); updateBadge(); },
-    onClose: function () { ui = null; }
+    onKey: onKey,
+    onClose: function () { ui = null; visibleOpts = []; }
   });
 
   NW.bus.on('request:change', function () { if (ui) { renderReply(); scrollSoon(); } });
@@ -467,7 +468,7 @@
 
   NW.wire = {
     push: push, ask: ask, contacts: CONTACTS, render: render, flush: flushTyping,
-    armDedupe: armDedupe,
+    armDedupe: armDedupe, awaiting: awaitingThread,
     open: function (id) { currentThread = id; thread(id).unread = 0; NW.apps.open('wire'); render(); },
     current: function () { return currentThread; }
   };

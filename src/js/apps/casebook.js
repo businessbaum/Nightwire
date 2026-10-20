@@ -1,6 +1,6 @@
 /* NIGHTWIRE — apps/casebook.js
-   Cork, pins and string. Evidence arrives here automatically; the deductions
-   are yours to make. */
+   Evidence board. Exhibits pin themselves; joining the right pairs with string
+   proves a theory. */
 (function (NW) {
   'use strict';
   var U = NW.util, el = U.el;
@@ -64,7 +64,7 @@
     });
   }
 
-  function build(body) {
+  function build(body, win) {
     var v = { sel: null, drag: null };
 
     var tools = el('div.toolbar');
@@ -72,19 +72,21 @@
     var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('class', 'cb-links');
     boardEl.appendChild(svg);
-    boardEl.appendChild(el('div.cb-hint', { text: 'CLICK A CARD, THEN ANOTHER, TO RUN STRING BETWEEN THEM · DRAG TO MOVE · CLICK A STRING TO CUT IT' }));
+    boardEl.appendChild(el('div.cb-hint', { text: 'CLICK A CARD, THEN ANOTHER, TO RUN STRING BETWEEN THEM · DRAG TO MOVE · CLICK A STRING TO CUT IT · SCROLL FOR MORE' }));
     var theories = el('div.theory-panel.scroll');
 
     body.appendChild(el('div.app', null, [tools, el('div.app-row', null, [boardEl, theories])]));
 
     tools.appendChild(el('span.tb-title', { text: 'EVIDENCE BOARD' }));
-    var tidy = el('button.btn', { text: 'TIDY' });
+    var tidy = el('button.btn', { text: 'TIDY', title: 'Lay the cards out in a grid that fits the window' });
     U.on(tidy, 'click', function () {
       var ids = Object.keys(board().nodes);
+      var cols = Math.max(2, Math.floor((boardEl.clientWidth - 24) / 152));
       ids.forEach(function (id, i) {
-        board().nodes[id].x = 24 + (i % 5) * 152;
-        board().nodes[id].y = 22 + Math.floor(i / 5) * 98;
+        board().nodes[id].x = 24 + (i % cols) * 152;
+        board().nodes[id].y = 22 + Math.floor(i / cols) * 98;
       });
+      boardEl.scrollTop = 0;
       NW.audio.play('click'); render();
     });
     tools.appendChild(tidy);
@@ -147,6 +149,14 @@
     function drawLinks() {
       while (svg.firstChild) svg.removeChild(svg.firstChild);
       svg.style.pointerEvents = 'none';
+      // the board scrolls, so the string layer has to cover every card
+      var maxX = 0, maxY = 0;
+      Object.keys(board().nodes).forEach(function (id) {
+        var p = board().nodes[id];
+        maxX = Math.max(maxX, p.x + 150); maxY = Math.max(maxY, p.y + 90);
+      });
+      svg.style.width = Math.max(boardEl.clientWidth, maxX) + 'px';
+      svg.style.height = Math.max(boardEl.clientHeight, maxY) + 'px';
       board().links.forEach(function (l, i) {
         if (!board().nodes[l.a] || !board().nodes[l.b]) return;
         var a = centreOf(l.a), b2 = centreOf(l.b);
@@ -160,9 +170,8 @@
         line.style.pointerEvents = 'none';
         svg.appendChild(line);
 
-        /* A one-pixel line is not something anybody can hit with a mouse.
-           An invisible fat stroke on top carries the pointer. */
-        var hit = document.createElementNS(SVGNS, 'line');
+        // invisible wide stroke on top, so the thin string is easy to click
+        var hit =document.createElementNS(SVGNS, 'line');
         hit.setAttribute('x1', a.x); hit.setAttribute('y1', a.y);
         hit.setAttribute('x2', b2.x); hit.setAttribute('y2', b2.y);
         hit.setAttribute('stroke', 'transparent');
@@ -230,8 +239,10 @@
         'Hover a string and it lights up; click it to cut it.' }));
     }
 
-    NW.bus.on('casebook:change', render);
-    NW.bus.on('evidence', function () { setTimeout(render, 60); });
+    win.listen('casebook:change', render);
+    win.listen('evidence', function () { setTimeout(render, 60); });
+    win.listen('chapter', renderTheories);
+    win.listen('win:resize', function (w) { if (w.id === 'casebook') drawLinks(); });
     render();
   }
 

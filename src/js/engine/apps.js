@@ -8,7 +8,7 @@
   var railEl = null;
   var badges = {};
 
-  /** define({id,name,icon,win:{...},build(body,win),onOpen,lockedBy}) */
+  /** define({id, name, short, icon, win:{...}, build(body, win, arg), onOpen, onFocus(win, arg), onKey(e, win), onClose}) */
   function define(def) {
     reg[def.id] = def;
     if (order.indexOf(def.id) === -1) order.push(def.id);

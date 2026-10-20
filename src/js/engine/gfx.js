@@ -1,7 +1,6 @@
 /* NIGHTWIRE — engine/gfx.js
-   Procedural graphics. There is not a single image file in this project:
-   mugshots, fingerprints, crime-scene photographs, maps and microfilm frames
-   are all generated from string seeds so they are stable across sessions. */
+   Procedural graphics: mugshots, fingerprints, scene photos and rail icons.
+   There are no image files; everything is drawn from string seeds. */
 (function (NW) {
   'use strict';
   var Rng = NW.Rng;
@@ -308,9 +307,8 @@
     var base = r.f(-0.18, 0.18);
     var warpA = r.f(0.02, 0.05), warpF = r.f(6, 11), warpP = r.f(0, 6.28);
 
-    /* Ridge-orientation field. Loops and whorls use the classical singular-point
-       model (a core contributes +1/2 winding, a delta -1/2); arches have no
-       singularity and are a smooth transverse field that peaks at the apex. */
+    /* Ridge orientation. Loops and whorls use singular points (core +1/2,
+       delta -1/2); arches are a smooth field that peaks at the apex. */
     var archA = r.f(0.95, 1.35), archS = r.f(0.26, 0.36), archK = r.f(3.4, 5.2);
     var whorlOff = r.f(0.035, 0.06);
 
@@ -364,9 +362,8 @@
 
     var lines = [];
     var ends = [];
-    /* The orientation field is only defined modulo pi, so a streamline has to
-       carry its own heading and pick whichever of theta / theta+pi continues it
-       — otherwise every branch cut flips the trace back on itself. */
+    /* Orientation is only defined modulo pi, so a streamline keeps its own
+       heading and picks theta or theta+pi, or it doubles back at branch cuts. */
     function trace(sx, sy) {
       var pts = [];
       var stepLen = D * 0.5;
@@ -461,8 +458,7 @@
     g.globalCompositeOperation = 'destination-out';
     var n = 4 + Math.floor(severity * 6);
     for (var i = 0; i < n; i++) {
-      // bias the erasure toward the edges so the centre keeps enough ridge
-      // context for the operator to actually work the comparison
+      // erase more near the edges so the centre stays workable
       var x = w * (r.chance(0.5) ? r.f(-0.05, 0.26) : r.f(0.74, 1.05));
       var y = h * (r.chance(0.5) ? r.f(-0.05, 0.26) : r.f(0.74, 1.05));
       if (r.chance(0.25)) { x = r.f(0, w); y = r.f(0, h); }
@@ -486,8 +482,7 @@
 
   /* ═══════════ EVIDENCE PHOTOGRAPHS ═══════════ */
 
-  /** Draw a monochrome night scene. Hidden details are drawn at very low
-      contrast so they only surface once the player pushes contrast/gamma. */
+  /** Monochrome night scenes. Clues ("HIDDEN") are drawn at very low contrast. */
   var SCENES = {};
 
   function scene(name, seed, w, h) {
@@ -590,6 +585,15 @@
     // smokestack
     g.fillStyle = '#20252b'; g.fillRect(w * 0.79, h * 0.10, w * 0.055, h * 0.66);
     g.fillStyle = '#191d22'; g.fillRect(w * 0.78, h * 0.10, w * 0.075, h * 0.02);
+    // fire escape zig-zagging down the north gable (right end) to the yard
+    g.strokeStyle = 'rgba(190,200,210,.26)'; g.lineWidth = 2;
+    var fx0 = w * 0.744, fx1 = w * 0.784;
+    for (var k = 0; k < 4; k++) {
+      var fy = h * (0.36 + k * 0.10);
+      g.beginPath(); g.moveTo(fx0, fy); g.lineTo(fx1, fy); g.stroke();                       // landing
+      g.beginPath(); g.moveTo(k % 2 ? fx0 : fx1, fy); g.lineTo(k % 2 ? fx1 : fx0, fy + h * 0.10); g.stroke();  // flight
+    }
+    g.beginPath(); g.moveTo(fx0, h * 0.34); g.lineTo(fx0, h * 0.76); g.stroke();             // rail
     // fence + gate
     g.strokeStyle = 'rgba(190,200,210,.22)'; g.lineWidth = 1;
     for (var fx = 0; fx < w; fx += 11) { g.beginPath(); g.moveTo(fx, h * 0.78); g.lineTo(fx, h * 0.92); g.stroke(); }

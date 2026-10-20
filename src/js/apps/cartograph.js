@@ -1,6 +1,4 @@
-/* NIGHTWIRE — apps/cartograph.js
-   County map and cellular triangulation. Three ranges give a point; the point
-   is a circle with a building in it. */
+/* NIGHTWIRE — apps/cartograph.js — county map and cell-site triangulation */
 (function (NW) {
   'use strict';
   var U = NW.util, el = U.el;
@@ -43,8 +41,8 @@
     }
   ];
 
-  function build(body) {
-    var v = { z: 0.62, ox: 0, oy: 0, trace: null, plotted: false, fix: null, hover: null };
+  function build(body, win) {
+    var v = { z: 0.62, ox: 0, oy: 0, trace: null, plotted: false, fix: null, userPanned: false };
 
     var tools = el('div.toolbar');
     var stage = el('div.map-stage');
@@ -64,7 +62,12 @@
       cv.height = Math.max(200, Math.floor(r.height));
       if (!v.userPanned) centre(); else draw();
     }
-    NW.bus.on('win:resize', function (w) { if (w.id === 'cartograph') fit(); });
+    win.listen('win:resize', function (w) { if (w.id === 'cartograph') fit(); });
+    // a new trace (or a newly revealed place) can arrive while the map is open
+    win.listen('flag', function (d) {
+      if (/^trace_/.test(d.key)) renderTools();
+      if (/^place_/.test(d.key)) draw();
+    });
 
     function toScreen(p) {
       return { x: p.x * v.z + v.ox, y: p.y * v.z + v.oy };
@@ -255,8 +258,8 @@
       var r = cv.getBoundingClientRect();
       var w = toWorld(e.clientX - r.left, e.clientY - r.top);
 
-      // place click?
-      var hit = NW.places.visible().filter(function (p) { return dist(p, w) < 16 / v.z; })[0];
+      // clicking a place pins it (unless a trace is being fixed)
+      var hit =NW.places.visible().filter(function (p) { return dist(p, w) < 16 / v.z; })[0];
       if (hit && !(v.trace && v.plotted)) {
         NW.audio.play('click');
         S().flags['pin_' + hit.id] = !S().flags['pin_' + hit.id];

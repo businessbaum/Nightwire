@@ -1,16 +1,12 @@
 /* ════════════════════════════════════════════════════════════
-   PHOSPHOR
-   Every colour the chrome uses comes from here. A theme sets the
-   phosphor, its rgb triplet (for the dozens of translucent washes),
-   the six surface greys and the tube's own glass tint. Nothing else
-   in the project hardcodes a colour.
+   PHOSPHOR — all UI colours come from these variables. Each theme sets
+   the phosphor colour (and its rgb triplet), surface greys and glass tint.
    ════════════════════════════════════════════════════════════ */
 :root {
   --font-mono: "Consolas", "DejaVu Sans Mono", "Liberation Mono", "Courier New", monospace;
   --font-doc: "Courier New", "Courier", monospace;
 
-  /* status colours hold steady across every theme — a red alert must
-     never be mistaken for a palette */
+  /* status colours are the same in every theme */
   --green:       #6dfba6;
   --green-dim:   #2f7c52;
   --red:         #ff5340;

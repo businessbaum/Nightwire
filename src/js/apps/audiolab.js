@@ -1,6 +1,6 @@
 /* NIGHTWIRE — apps/audiolab.js
-   Tape analysis. Every exhibit is synthesised from a layer list, so the things
-   hiding behind the voice really are down there in the spectrum. */
+   Tape analysis. Each tape is synthesised from layers, so the sounds behind
+   the voice really are in the spectrum. */
 (function (NW) {
   'use strict';
   var U = NW.util, el = U.el;
@@ -214,10 +214,10 @@
       }
       data.push(col);
     }
-    // normalise to the loudest bin in the clip so the dB floor is meaningful
+    // store as dB below the loudest bin, so the display floor is meaningful
     var peak = 1e-9;
     data.forEach(function (c) { for (var b = 0; b < BINS; b++) if (c[b] > peak) peak = c[b]; });
-    data.peak = peak;
+    data.forEach(function (c) { for (var b = 0; b < BINS; b++) c[b] = 20 * Math.log10(c[b] / peak + 1e-9); });
     specCache[clip.id] = data;
     return data;
   }
@@ -319,23 +319,30 @@
       var img = g.createImageData(W, H);
       var d = img.data;
       var colW = W / data.length;
-      var peak = data.peak || 1;
       var FLOOR = -56;                      // dB below the clip peak that reads as black
+
+      // per row: which bin it shows (log frequency axis) and the filter/gain offset in dB
+      var rowBin = new Int32Array(H), rowDb = new Float32Array(H);
+      var gainDb = 20 * Math.log10(v.gain);
+      for (var y = 0; y < H; y++) {
+        rowBin[y] = Math.floor(Math.pow(1 - y / H, 2.1) * (BINS - 1));
+        rowDb[y] = 20 * Math.log10(binGain(rowBin[y]) + 1e-12) + gainDb;
+      }
+      // colour ramp as a lookup table
+      var STEPS = 256, ramp = new Uint8ClampedArray((STEPS + 1) * 3);
+      for (var s = 0; s <= STEPS; s++) {
+        var val = Math.pow(s / STEPS, 2.3);
+        ramp[s * 3] = val * TINT[0];
+        ramp[s * 3 + 1] = Math.pow(val, 1.2) * TINT[1];
+        ramp[s * 3 + 2] = Math.pow(val, 1.6) * TINT[2];
+      }
       for (var x = 0; x < W; x++) {
         var col = data[Math.min(data.length - 1, Math.floor(x / colW))];
-        for (var y = 0; y < H; y++) {
-          // log frequency axis
-          var frac = 1 - y / H;
-          var bin = Math.floor(Math.pow(frac, 2.1) * (BINS - 1));
-          var mag = col[bin] * binGain(bin) * v.gain / peak;
-          var db = 20 * Math.log10(mag + 1e-9);
-          var val = (db - FLOOR) / (0 - FLOOR);
-          val = val < 0 ? 0 : val > 1 ? 1 : val;
-          val = Math.pow(val, 2.3);
-          var o = (y * W + x) * 4;
-          d[o] = val * TINT[0];
-          d[o + 1] = Math.pow(val, 1.2) * TINT[1];
-          d[o + 2] = Math.pow(val, 1.6) * TINT[2];
+        for (var yy = 0; yy < H; yy++) {
+          var t = (col[rowBin[yy]] + rowDb[yy] - FLOOR) / -FLOOR;
+          var si = t <= 0 ? 0 : t >= 1 ? STEPS : (t * STEPS) | 0;
+          var o = (yy * W + x) * 4;
+          d[o] = ramp[si * 3]; d[o + 1] = ramp[si * 3 + 1]; d[o + 2] = ramp[si * 3 + 2];
           d[o + 3] = 255;
         }
       }
@@ -372,18 +379,22 @@
       g.stroke();
     }
 
-    function playClip() {
+    function playFrom(t) {
       if (!v.clip) return;
       stopClip();
       NW.audio.resume();
-      var buf = synth(v.clip);
-      v.playing = NW.audio.playBuffer(buf, RATE, { vol: 0.85 * Math.min(2, v.gain), highpass: v.hpf > 25 ? v.hpf : 0, lowpass: v.lpf < 7900 ? v.lpf : 0 });
-      v.t0 = Date.now();
+      v.playing = NW.audio.playBuffer(synth(v.clip), RATE, { vol: 0.85 * Math.min(2, v.gain), offset: t,
+        highpass: v.hpf > 25 ? v.hpf : 0, lowpass: v.lpf < 7900 ? v.lpf : 0 });
+      v.t0 = Date.now() - t * 1000;
       playhead.style.display = 'block';
       tick();
     }
+    function playClip() { playFrom(0); }
+    // filter and gain changes retune the tape that is playing
     function applyLive() {
-      if (v.playing) { playClip(); }
+      if (!v.playing) return;
+      v.playing.setFilter(v.hpf > 25 ? v.hpf : 0, v.lpf < 7900 ? v.lpf : 0);
+      v.playing.setVolume(0.85 * Math.min(2, v.gain));
     }
     function stopClip() {
       if (v.playing) { v.playing.stop(); v.playing = null; }
@@ -466,18 +477,20 @@
       }, 500);
     }
 
+    // click the spectrogram to play from that point
     U.on(spec, 'click', function (e) {
       if (!v.clip) return;
       var r = spec.getBoundingClientRect();
-      var t = (e.clientX - r.left) / r.width * v.clip.dur;
-      stopClip();
-      NW.audio.resume();
-      v.playing = NW.audio.playBuffer(synth(v.clip), RATE, { vol: 0.85 * Math.min(2, v.gain), offset: t,
-        highpass: v.hpf > 25 ? v.hpf : 0, lowpass: v.lpf < 7900 ? v.lpf : 0 });
-      v.t0 = Date.now() - t * 1000;
-      playhead.style.display = 'block';
-      tick();
+      playFrom((e.clientX - r.left) / r.width * v.clip.dur);
     });
+
+    win.onClose(stopClip);
+    win.listen('flag', function (d) { if (/^audio_/.test(d.key)) renderTools(); });
+    win.listen('theme', function () { drawSpec(); drawWave(); });
+    win.showClip = function (id) {
+      renderTools();
+      if (id && NW.media.clip(id) && (!v.clip || v.clip.id !== id)) load(id);
+    };
 
     renderTools();
     var first = (arg && NW.media.clip(arg)) ? arg : (NW.media.availableAudio()[0] || {}).id;
@@ -489,6 +502,6 @@
     hint: 'tape analysis and spectrogram',
     win: { w: 820, h: 660, min: [640, 520] },
     build: build,
-    onClose: function () { return true; }
+    onFocus: function (win, arg) { if (win.showClip) win.showClip(arg); }
   });
 })(window.NW);

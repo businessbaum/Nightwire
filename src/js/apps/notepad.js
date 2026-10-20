@@ -4,7 +4,7 @@
   var U = NW.util, el = U.el;
   var S = function () { return NW.state.s; };
 
-  function build(body) {
+  function build(body, win) {
     var tools = el('div.toolbar');
     var area = el('textarea.np-area', { placeholder: 'Night desk notes…\n\nNothing typed here is transmitted anywhere.\nWhich, in this building, is the point.' });
     var auto = el('div.np-auto');
@@ -45,8 +45,8 @@
       cnt.textContent = facts.length + ' FACTS · ' + NW.evidence.held().length + ' EXHIBITS';
     }
 
-    NW.bus.on('fact', renderAuto);
-    NW.bus.on('evidence', renderAuto);
+    win.listen('fact', renderAuto);
+    win.listen('evidence', renderAuto);
     renderAuto();
   }
 

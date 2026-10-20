@@ -7,8 +7,20 @@
   var KEYS = [['1', ''], ['2', 'ABC'], ['3', 'DEF'], ['4', 'GHI'], ['5', 'JKL'], ['6', 'MNO'],
               ['7', 'PRS'], ['8', 'TUV'], ['9', 'WXY'], ['*', ''], ['0', 'OPER'], ['#', '']];
 
+  function topicKey(c, t) { return 'topic_' + c.number + '_' + t.id; }
+  function openTopics(c) {
+    return (c.topics || []).filter(function (t) {
+      return (!t.requires || t.requires()) && !S().flags[topicKey(c, t)];
+    });
+  }
+  /** Called before and has something new to ask about. */
+  function hasNews(c) {
+    return S().dialed[c.number] && !c.dead && (!c.requires || c.requires()) && openTopics(c).length > 0;
+  }
+
   function build(body, win, arg) {
-    var v = { num: '', call: null, stage: 'idle', ringTimer: null };
+    // token changes on every dial and hang-up, so stale transcript lines stop
+    var v = { num: '', call: null, stage: 'idle', ringTimer: null, token: 0 };
 
     var tools = el('div.toolbar', null, [el('span.tb-title', { text: 'OUTSIDE LINE · SUB-LEVEL 2 · EXT 04' })]);
     var wrap = el('div.sw-wrap');
@@ -45,13 +57,21 @@
     function renderKnown() {
       U.clear(known);
       NW.calls.known().forEach(function (c) {
-        if (!S().dialed[c.number] && c.dead && c.number !== '555-0000') {
-          // still list it; the player found it somewhere
-        }
-        var row = el('div', { class: 'xref', style: { display: 'block' }, text: c.number + '  ' + (c.who || '') });
-        U.on(row, 'click', function () { v.num = c.number; display.textContent = v.num; NW.audio.play('click'); });
+        var news = hasNews(c);
+        var row = el('div.xref.sw-num', {
+          title: c.number + '  ' + (c.who || '') + (news ? '\nHas something new to talk about' : '') }, [
+          el('span.sw-new', { text: news ? '●' : '' }),
+          document.createTextNode(c.number + '  ' + (c.who || ''))
+        ]);
+        U.on(row, 'click', function () { setNumber(c.number); NW.audio.play('click'); });
         known.appendChild(row);
       });
+    }
+
+    function setNumber(n) {
+      if (v.stage !== 'idle') return;
+      v.num = String(n);
+      display.textContent = v.num || '—';
     }
 
     function press(d) {
@@ -63,17 +83,27 @@
       NW.audio.dtmf(d);
     }
 
+    function backspace() {
+      if (v.stage !== 'idle' || !v.num) return;
+      v.num = v.num.slice(0, -1);
+      if (/-$/.test(v.num)) v.num = v.num.slice(0, -1);
+      display.textContent = v.num || '—';
+    }
+
     function hang() {
       if (v.ringTimer) { clearTimeout(v.ringTimer); v.ringTimer = null; }
+      v.token++;
       v.stage = 'idle'; v.call = null; v.num = '';
       display.textContent = '—';
       status.className = 'call-status'; status.textContent = 'ON HOOK';
       U.clear(topics);
       NW.audio.play('click');
+      renderKnown();
     }
 
     function place() {
       var num = v.num;
+      if (v.stage !== 'idle') return;
       if (num.replace(/\D/g, '').length < 7) {
         NW.notify.push({ head: 'INCOMPLETE', body: 'Seven digits.', kind: 'bad', ms: 1600 });
         return;
@@ -83,6 +113,7 @@
       S().dialed[num] = true;
       S().stats.calls++;
       U.clear(log); U.clear(topics);
+      v.token++;
       v.stage = 'ringing';
       status.className = 'call-status ring';
       status.textContent = 'RINGING…';
@@ -137,9 +168,12 @@
       return line.lastChild;
     }
 
+    /** Type out lines one by one; done() only runs if the call is still the same call. */
     function playLines(lines, done) {
+      var token = v.token;
       var i = 0;
       (function step() {
+        if (token !== v.token) return;
         if (i >= lines.length) { if (done) done(); return; }
         var l = lines[i++];
         var node = addLine(l.s || '···', l.l);
@@ -156,16 +190,13 @@
       var c = v.call;
       if (!c || !c.topics) return;
       topics.appendChild(el('div', { class: 'dim', style: { fontSize: '9px', letterSpacing: '.2em', marginBottom: '6px' }, text: 'ASK ABOUT' }));
-      var any = false;
-      c.topics.forEach(function (t) {
-        if (t.requires && !t.requires()) return;
-        if (S().flags['topic_' + c.number + '_' + t.id]) return;
-        any = true;
+      var list = openTopics(c);
+      list.forEach(function (t) {
         var b = el('button.reply-opt', { text: t.q });
         U.on(b, 'click', function () { runTopic(c, t); });
         topics.appendChild(b);
       });
-      if (!any) {
+      if (!list.length) {
         topics.appendChild(el('div', { class: 'dim', style: { fontSize: '11px' }, text: 'Nothing further to ask on this line tonight.' }));
       }
       var hu = el('button.btn', { text: 'END CALL', style: { marginTop: '6px' } });
@@ -173,10 +204,12 @@
       topics.appendChild(hu);
     }
 
+    // a topic only counts as asked once the answer has finished, so hanging up
+    // halfway leaves it open for the next call
     function runTopic(c, t) {
-      S().flags['topic_' + c.number + '_' + t.id] = true;
       U.clear(topics);
       playLines(t.a, function () {
+        S().flags[topicKey(c, t)] = true;
         if (t.gives) {
           var g = t.gives;
           if (g.evidence) [].concat(g.evidence).forEach(function (e) { NW.state.addEvidence(e); });
@@ -192,12 +225,23 @@
           NW.audio.play('busy');
           U.clear(topics);
         } else renderTopics();
+        renderKnown();
       });
     }
 
+    win.setNumber = setNumber;
+    win.keypad = function (e) {
+      if (/^[0-9*#]$/.test(e.key)) { press(e.key); return true; }
+      if (e.key === 'Backspace') { backspace(); return true; }
+      if (e.key === 'Enter') { if (v.stage === 'idle') place(); return true; }
+      return false;
+    };
+    win.onClose(function () { if (v.ringTimer) clearTimeout(v.ringTimer); v.token++; });
+
+    // the list depends on records, documents and evidence held
+    ['evidence', 'unlock', 'flag'].forEach(function (ev) { win.listen(ev, renderKnown); });
     renderKnown();
-    NW.bus.on('evidence', renderKnown);
-    if (arg) { v.num = String(arg); display.textContent = v.num; }
+    if (arg) setNumber(arg);
   }
 
   NW.apps.define({
@@ -205,6 +249,7 @@
     hint: 'outside line',
     win: { w: 740, h: 580, min: [620, 440] },
     build: build,
-    onFocus: function (win, arg) {}
+    onFocus: function (win, arg) { if (arg && win.setNumber) win.setNumber(arg); },
+    onKey: function (e, win) { return win.keypad ? win.keypad(e) : false; }
   });
 })(window.NW);

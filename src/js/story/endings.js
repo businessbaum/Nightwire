@@ -1,4 +1,4 @@
-/* NIGHTWIRE — story/endings.js */
+/* NIGHTWIRE — story/endings.js — picks one of four endings from the night's flags */
 (function (NW) {
   'use strict';
   var U = NW.util;
@@ -148,6 +148,13 @@
       notes.map(function (n) { return '· ' + U.esc(n); }).join('<br>') + '</div>';
   }
 
+  /** Resolves once no overlay card is on screen (the ending takes over that layer). */
+  function overlayFree() {
+    return new Promise(function (resolve) {
+      (function poll() { if (NW.notify.overlayOpen()) setTimeout(poll, 300); else resolve(); })();
+    });
+  }
+
   function play(which) {
     var id = (!which || which === 'auto') ? pick() : which;
     var e = ENDINGS[id] || ENDINGS.closed_case;
@@ -155,7 +162,11 @@
     NW.state.flag('game_over', id);
     NW.clock.stop();
     NW.win.closeAll();
+    overlayFree().then(function () { show(e, id); });
+    return new Promise(function () { /* the night is over */ });
+  }
 
+  function show(e, id) {
     var layer = NW.$('#overlay-layer');
     NW.clear(layer);
     layer.classList.remove('hidden');
@@ -165,6 +176,13 @@
     layer.appendChild(card);
 
     NW.audio.play(id === 'nightwire' ? 'unlock' : id === 'dead_air' ? 'lock' : 'thunk');
+
+    // a click finishes the line being typed
+    var typing = null;
+    NW.util.on(card, 'click', function (ev) {
+      if (ev.target.closest('button')) return;
+      if (typing && typing._typerStop) typing._typerStop();
+    });
 
     var i = 0;
     function step() {
@@ -189,15 +207,16 @@
       }
       var p = NW.el('p');
       card.appendChild(p);
+      typing = p;
       var plain = line.replace(/<[^>]+>/g, '');
       NW.typer.type(p, plain, { cps: 160, cursor: false, sound: false }).then(function () {
+        typing = null;
         p.innerHTML = line;
         card.scrollTop = card.scrollHeight;
         setTimeout(step, 620);
       });
     }
     step();
-    return new Promise(function () { /* terminal */ });
   }
 
   NW.endings = { play: play, pick: pick, all: ENDINGS };

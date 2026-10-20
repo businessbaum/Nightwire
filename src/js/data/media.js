@@ -1,7 +1,6 @@
 /* NIGHTWIRE — data/media.js
-   Photographic exhibits and audio exhibits. Both are generated, not loaded.
-   Photographs hide detail at very low contrast: the player has to push the
-   image before it gives anything up. */
+   Photo and tape exhibits (both generated). A photo "find" is a clickable
+   spot that only counts once contrast is pushed past minContrast. */
 (function (NW) {
   'use strict';
 
@@ -21,7 +20,7 @@
       finds: [
         { id: 'fd_figure', x: 0.415, y: 0.63, r: 0.090, label: 'FIGURE STANDING INSIDE THE BAY DOORWAY',
           minContrast: 1.45, evidence: 'ev_millfigure',
-          note: 'A man, roughly 6-2, heavy build, standing well back from the opening. He is not moving toward the agents. He is waiting for them to come in.' }
+          note: 'A man, roughly 6-2, heavy build, standing well back from the opening. He is not moving toward the agents. He is waiting for them to come in. At the far end of the building a fire escape runs down the north gable to the yard.' }
       ]
     },
     {
@@ -63,8 +62,7 @@
   ];
 
   /* ── AUDIO EXHIBITS ──
-     layers: each is synthesised. `band` is where it lives in the spectrum —
-     the player has to filter down to it before the spectrogram shows it. */
+     Each layer is synthesised; `band` is where it sits in the spectrum. */
   var AUDIO = [
     {
       id: 'au_911_87', title: 'EXHIBIT A-1 — DISPATCH TAPE, 08/12/1987 22:52',

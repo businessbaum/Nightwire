@@ -1,6 +1,4 @@
-/* NIGHTWIRE — engine/rng.js
-   Seeded PRNG. Every piece of procedural art in this game is generated from a
-   string seed, so a given face / fingerprint / photo always looks identical. */
+/* NIGHTWIRE — engine/rng.js — seeded PRNG, so generated art is the same every run */
 (function (NW) {
   'use strict';
 
@@ -37,7 +35,7 @@
     }
     return a;
   };
-  /** normal-ish */
+  /** Normally distributed sample (Box–Muller). */
   Rng.prototype.gauss = function (mu, sigma) {
     var u = 1 - this.next(), v = this.next();
     return (mu || 0) + (sigma === undefined ? 1 : sigma) * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);

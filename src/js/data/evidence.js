@@ -1,5 +1,4 @@
-/* NIGHTWIRE — data/evidence.js
-   Evidence items, board nodes, deduction theories and the timeline puzzles. */
+/* NIGHTWIRE — data/evidence.js — exhibits, casebook theories and timeline puzzles */
 (function (NW) {
   'use strict';
 

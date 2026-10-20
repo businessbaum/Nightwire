@@ -1,10 +1,8 @@
-/* NIGHTWIRE — data/filesystem.js
-   The terminal's local volume. Somebody sat here before you and the reimage
-   work order was closed "complete" without ever being run. */
+/* NIGHTWIRE — data/filesystem.js — the terminal's local volume, as seen by SHELL */
 (function (NW) {
   'use strict';
 
-  /* Vigenère, so the ciphertexts in this file are always internally correct. */
+  /* Vigenère, so the ciphertexts here are always generated from the plaintext. */
   function vig(text, key, dir) {
     var A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     var out = '', ki = 0;

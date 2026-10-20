@@ -1,4 +1,4 @@
-/* NIGHTWIRE — apps/registry.js — Central Person & Vehicle Index */
+/* NIGHTWIRE — apps/registry.js — central person & vehicle index */
 (function (NW) {
   'use strict';
   var U = NW.util, el = U.el;
@@ -21,8 +21,21 @@
     return c;
   }
 
+  // result-list mugshots are expensive to draw, so keep them per theme
+  var thumbs = {};
+  function thumb(p) {
+    var key = p.id + ':' + NW.theme.current();
+    if (!thumbs[key]) {
+      var face = NW.gfx.make(34, 42);
+      NW.gfx.portrait(face, p.id, Object.assign({ levels: 3 }, p.face || {}, { plate: null }));
+      thumbs[key] = face;
+    }
+    return thumbs[key];
+  }
+
   function build(body, win, arg) {
     var keepScroll = false;
+    var shown = null;          // what the record pane shows: {kind:'person', id} | {kind:'vehicle', v}
     var search = el('div.reg-search');
     var input = el('input.input', { placeholder: 'NAME, DOB, ADDRESS, SSN, PLATE, TAG…', value: st.q });
     var go = el('button.btn', { text: 'QUERY' });
@@ -44,9 +57,8 @@
         U.on(b, 'click', function () { st.index = ix.id; NW.audio.play('click'); renderTabs(); doSearch(); });
         tabs.appendChild(b);
       });
-      var c = el('span', { class: 'dim', style: { marginLeft: 'auto', fontSize: '9px' },
-        text: 'CLEARANCE ' + clearance() + (NW.state.has('clearance2') ? ' (UPLIFT ACTIVE)' : '') });
-      tabs.appendChild(c);
+      tabs.appendChild(el('span', { class: 'dim', style: { marginLeft: 'auto', fontSize: '9px' },
+        text: 'CLEARANCE ' + clearance() + (NW.state.has('clearance2') ? ' (UPLIFT ACTIVE)' : '') }));
     }
 
     function doSearch() {
@@ -54,16 +66,12 @@
       U.clear(results);
       NW.audio.play('disk');
       if (st.index === 'veh') return renderVehicles();
-      var hits = NW.people.search(st.q, { index: st.index }).filter(function (p) {
-        return (p.clearance || 1) <= clearance() || S().records[p.id];
-      });
+      var hits = NW.people.search(st.q, { index: st.index, clearance: clearance() });
       results.appendChild(el('div.sec-h', { text: hits.length + ' RECORD' + (hits.length === 1 ? '' : 'S') }));
       if (!hits.length) results.appendChild(el('div.empty', { text: 'NO MATCH IN THIS INDEX' }));
       hits.forEach(function (p) {
-        var face = NW.gfx.make(34, 42);
-        NW.gfx.portrait(face, p.id, Object.assign({ levels: 3 }, p.face || {}, { plate: null }));
         var row = el('div.reg-hit', { class: st.sel === p.id ? 'sel' : '' }, [
-          el('span.rh-face', null, face),
+          el('span.rh-face', null, thumb(p)),
           el('div', null, [el('div.rh-n', { text: p.name }), el('div.rh-m', { text: p.dob + ' · ' + statusShort(p) })])
         ]);
         U.on(row, 'click', function () { open(p.id); });
@@ -98,9 +106,15 @@
       doSearch();
     }
 
+    function showVehicle(v) {
+      st.index = 'veh'; st.q = v.plate; input.value = v.plate; st.selVeh = v.id;
+      renderTabs(); doSearch(); renderVehicle(v);
+    }
+
     function renderRecord(p) {
       U.clear(view);
       if (!p) return;
+      shown = { kind: 'person', id: p.id };
       if ((p.clearance || 1) > clearance() && !S().records[p.id]) {
         view.appendChild(el('div.sealed', { text: 'RECORD SEALED — CLEARANCE ' + p.clearance + ' REQUIRED' }));
         return;
@@ -108,7 +122,7 @@
 
       var photo = NW.gfx.make(108, 134);
       NW.gfx.portrait(photo, p.id, Object.assign({ levels: 4 }, p.face || {}));
-      var hdr = el('div.rec-hdr', null, [
+      view.appendChild(el('div.rec-hdr', null, [
         el('div.rec-photo', null, [photo, el('div.rp-cap', { text: 'VC-' + U.hash(p.id).toString().slice(0, 6) })]),
         el('div.grow', null, [
           el('div.rec-name', { text: p.name }),
@@ -126,8 +140,7 @@
             p.plate ? el('dd', null, [plateLink(p.plate)]) : null
           ])
         ])
-      ]);
-      view.appendChild(hdr);
+      ]));
 
       if ((p.aka || []).length) {
         view.appendChild(section('ALSO KNOWN AS', el('div', null,
@@ -157,7 +170,7 @@
           if (!o) return;
           if ((o.clearance || 1) > clearance() && !S().records[id]) return;
           var s = el('span.xref', { text: o.name });
-          U.on(s, 'click', function () { open(id); });
+          U.on(s, 'click', function () { st.index = o.index; renderTabs(); open(id); });
           xr.appendChild(s); xr.appendChild(document.createTextNode('   '));
         });
         if (xr.childNodes.length) view.appendChild(section('CROSS REFERENCE', xr));
@@ -184,7 +197,6 @@
         view.appendChild(section('LINKED DOCUMENTS', dl));
       }
 
-      // action bar
       var actions = el('div.rec-section');
       if (NW.request.wants('person')) {
         var tr = el('button.btn.good', { text: '▸ TRANSMIT THIS RECORD' });
@@ -212,20 +224,25 @@
       NW.bus.emit('registry:open', p.id);
     }
 
-    /* A document that arrives while a record is on screen has to become
-       clickable straight away, not the next time the operator reopens it. */
-    var offUnlock = NW.bus.on('unlock', function (d) {
-      if (!NW.win.isOpen('registry')) { offUnlock(); return; }
-      if (d.kind !== 'docs' || !st.sel) return;
+    function rerenderRecord() {
+      if (!shown) return;
       var y = view.scrollTop;
       keepScroll = true;
-      renderRecord(NW.people.get(st.sel));
+      if (shown.kind === 'person') renderRecord(NW.people.get(shown.id));
+      else renderVehicle(shown.v);
       keepScroll = false;
       view.scrollTop = y;
-    });
+    }
+
+    // documents and requests arriving while a record is open update it in place
+    win.listen('unlock', function (d) { if (d.kind === 'docs') rerenderRecord(); });
+    win.listen('request:open', rerenderRecord);
+    win.listen('request:close', rerenderRecord);
+    win.listen('flag', function (d) { if (d.key === 'clearance2' || d.key === 'clearance3') { renderTabs(); doSearch(); } });
 
     function renderVehicle(v) {
       U.clear(view);
+      shown = { kind: 'vehicle', v: v };
       var o = v.ownerId ? NW.people.get(v.ownerId) : null;
       view.appendChild(el('div.rec-hdr', null, [
         el('div.grow', null, [
@@ -272,23 +289,28 @@
     }
     function plateLink(pl) {
       var s = el('span.xref', { text: pl });
-      U.on(s, 'click', function () { st.index = 'veh'; renderTabs(); st.q = pl; input.value = pl; doSearch(); var v = NW.vehicles.get(pl); if (v) { st.selVeh = v.id; renderVehicle(v); } });
+      U.on(s, 'click', function () {
+        var v = NW.vehicles.get(pl);
+        if (v) showVehicle(v);
+        else { st.index = 'veh'; st.q = pl; input.value = pl; renderTabs(); doSearch(); }
+      });
       return s;
     }
 
     U.on(go, 'click', doSearch);
     U.on(input, 'keydown', function (e) { NW.audio.play('key'); if (e.key === 'Enter') doSearch(); });
 
+    /** Show a person (by id) or a vehicle (by plate). */
     win.registryOpen = function (id) {
       var p = NW.people.get(id);
-      if (p) { st.index = p.index; renderTabs(); open(id); }
+      if (p) { st.index = p.index; renderTabs(); open(id); return true; }
+      var v = NW.vehicles.get(id);
+      if (v) { showVehicle(v); return true; }
+      return false;
     };
 
     renderTabs();
-    if (arg && typeof arg === 'string' && NW.people.get(arg)) {
-      var p0 = NW.people.get(arg);
-      st.index = p0.index; renderTabs(); open(arg);
-    } else {
+    if (!(arg && typeof arg === 'string' && win.registryOpen(arg))) {
       doSearch();
       view.appendChild(el('div.empty', { html: 'CENTRAL PERSON INDEX<br><br>ENTER A NAME, DATE OF BIRTH, ADDRESS,<br>SOCIAL SECURITY NUMBER OR PLATE.<br><br><span style="opacity:.6">AN EMPTY QUERY RETURNS THE WHOLE INDEX.</span>' }));
     }
@@ -299,6 +321,6 @@
     hint: 'central person & vehicle index',
     win: { w: 860, h: 560, min: [640, 380] },
     build: build,
-    onFocus: function (win, arg) { if (arg && win.registryOpen) win.registryOpen(arg); }
+    onFocus: function (win, arg) { if (arg && typeof arg === 'string' && win.registryOpen) win.registryOpen(arg); }
   });
 })(window.NW);

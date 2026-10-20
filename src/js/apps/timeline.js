@@ -4,7 +4,7 @@
   var U = NW.util, el = U.el;
   var S = function () { return NW.state.s; };
 
-  function build(body) {
+  function build(body, win) {
     var v = { tl: null, placed: {}, dragging: null, checked: false };
 
     var tools = el('div.toolbar');
@@ -44,13 +44,16 @@
       return o;
     }
 
+    // fixed shuffle, so the card order never gives the answer away
+    function cardsFor(t) { return new NW.Rng('tl:' + t.id).shuffle(t.cards); }
+
     function render() {
       U.clear(pool); U.clear(track); U.clear(footer);
       if (!v.tl) { track.appendChild(el('div.empty', { text: 'SELECT A RECONSTRUCTION' })); return; }
 
       pool.appendChild(el('div.sec-h', { text: 'EVENTS ON FILE' }));
       var used = Object.keys(v.placed).map(function (k) { return v.placed[k]; });
-      v.tl.cards.forEach(function (c) {
+      cardsFor(v.tl).forEach(function (c) {
         if (used.indexOf(c.id) !== -1) return;
         var card = el('div.tl-card', { draggable: true, dataset: { id: c.id } }, [
           el('div', { text: c.t }),
@@ -62,7 +65,7 @@
         });
         card.addEventListener('dragend', function () { card.classList.remove('dragging'); v.dragging = null; });
         U.on(card, 'click', function () {
-          // click-to-place into first empty slot
+          // click places the card in the first empty slot
           for (var i = 0; i < v.tl.slots.length; i++) {
             if (!v.placed[i]) { v.placed[i] = c.id; NW.audio.play('click'); v.checked = false; render(); return; }
           }
@@ -109,8 +112,10 @@
       clr.disabled = solved;
       U.on(clr, 'click', function () { v.placed = {}; v.checked = false; render(); });
       footer.appendChild(clr);
+      var decoys = v.tl.cards.filter(function (c) { return c.decoy; }).length;
       footer.appendChild(el('span', { class: 'dim', style: { fontSize: '10px' },
-        text: Object.keys(v.placed).length + ' / ' + v.tl.slots.length + ' placed · two of the cards are false and belong nowhere' }));
+        text: Object.keys(v.placed).length + ' / ' + v.tl.slots.length + ' placed' +
+              (decoys ? ' · ' + decoys + ' of the cards are false and belong nowhere' : '') }));
     }
 
     function doCheck() {
@@ -136,6 +141,12 @@
       });
       render();
     }
+
+    // a new reconstruction unlocks with the chapter
+    win.listen('chapter', function () {
+      var a2 = available();
+      if (!v.tl && a2.length) load(a2[a2.length - 1]); else renderTools();
+    });
 
     renderTools();
     var a = available();

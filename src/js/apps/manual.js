@@ -1,7 +1,6 @@
 /* NIGHTWIRE — apps/manual.js
-   The NCIB Analysis Operator Manual, 4th edition. It is both the tutorial and
-   the key text for the reference cipher in Chapter Five, so its pagination is
-   load-bearing: do not renumber the pages. */
+   The operator's manual. It is also the key for the chapter 5 book cipher,
+   so don't renumber pages or reflow lines. */
 (function (NW) {
   'use strict';
   var U = NW.util, el = U.el;
@@ -195,8 +194,7 @@
       renderNav(p);
     }
 
-    /* The practical notes are not part of the book — they are the cards each
-       program shows on its first opening, kept here so they can be re-read. */
+    // "how to work this desk": the first-open tutorial cards, kept for re-reading
     var TUT_ORDER = ['wire', 'registry', 'archive', 'daktylo', 'imagelab', 'audiolab',
                      'cartograph', 'cipher', 'casebook', 'timeline', 'switchboard',
                      'shell', 'microfilm', 'ballistics', 'notepad', 'settings'];

@@ -1,5 +1,4 @@
-/* NIGHTWIRE — engine/util.js
-   Tiny DOM + helper layer. Everything hangs off the global NW namespace. */
+/* NIGHTWIRE — engine/util.js — small DOM and helper layer on the global NW */
 window.NW = window.NW || {};
 
 (function (NW) {
@@ -91,7 +90,7 @@ window.NW = window.NW || {};
     return r;
   }
 
-  /** Fuzzy-ish text match used across search fields. */
+  /** Search match: every term in the needle appears in the haystack. */
   function matches(haystack, needle) {
     if (!needle) return true;
     haystack = String(haystack || '').toLowerCase();
@@ -107,7 +106,7 @@ window.NW = window.NW || {};
   /** MM/DD/YY from a {y,m,d} */
   function fmtDate(d) { return pad(d.m) + '/' + pad(d.d) + '/' + pad(d.y % 100); }
 
-  /** Base64-ish save code encoding (unicode safe). */
+  /** Unicode-safe base64, used for save codes. */
   function encode(str) {
     try { return btoa(unescape(encodeURIComponent(str))); } catch (e) { return ''; }
   }
@@ -144,6 +143,6 @@ window.NW = window.NW || {};
     deepClone: deepClone, matches: matches, fmtTime: fmtTime, fmtDate: fmtDate,
     encode: encode, decode: decode, id: id, drag: drag
   };
-  // convenience globals used everywhere inside the project
+  // shortcuts used everywhere
   NW.el = el; NW.$ = $; NW.$$ = $$; NW.clear = clear; NW.esc = esc;
 })(window.NW);

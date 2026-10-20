@@ -1,47 +1,70 @@
 /* NIGHTWIRE — engine/director.js
-   The story runtime. Chapters are authored as flat arrays of steps; the
-   director interprets them, and a set of always-on triggers reacts to what
-   the player discovers on their own. */
+   Story runtime. A chapter is a flat list of steps run in order (the main
+   track). Triggers react to what the player finds and run on a side track
+   while the main track waits on the player. */
 (function (NW) {
   'use strict';
   var S = function () { return NW.state.s; };
 
   var scenes = {};
   var triggers = [];
-  var running = false;
-  var queue = [];
+  var running = false;     // main track is active
+  var parked = false;      // main track is waiting on the player
+  var starting = false;    // main track is about to (re)start
+  var side = null;         // promise of the trigger currently running
   var abort = false;
 
   function scene(id, steps) { scenes[id] = steps; }
-
   function trigger(t) { triggers.push(t); }
 
+  function sideIdle() { return side || Promise.resolve(); }
+
+  /* One trigger at a time, and never while the main track is talking. */
   function evalTriggers() {
+    if (side || starting || (running && !parked)) return;
     for (var i = 0; i < triggers.length; i++) {
       var t = triggers[i];
       var key = t.id || ('trg' + i);
-      // guard on the saved map, not a runtime field — otherwise every trigger
-      // fires again the moment a shift is restored
-      if (S().story.done[key] && t.once !== false) continue;
+      if (S().story.done[key]) continue;
       if (!NW.state.test(t.when)) continue;
-      t._fired = true;
-      S().story.done[key] = true;
-      run(t.steps, { name: key });
-      break;                                   // one at a time; the rest re-check later
+      fire(t, key);
+      return;
     }
   }
 
-  ['flag', 'evidence', 'unlock', 'fact', 'request:close', 'wire:msg', 'tick', 'story:step'].forEach(function (ev) {
-    NW.bus.on(ev, function () { if (!running) evalTriggers(); });
+  function fire(t, key) {
+    side = exec(t.steps.slice(), { name: key, side: true })
+      .catch(function (e) { console.error('[director] trigger ' + key, e); })
+      .then(function () {
+        S().story.done[key] = true;   // stored in the save, so it never fires twice
+        side = null;
+        evalTriggers();
+      });
+  }
+
+  ['flag', 'evidence', 'unlock', 'fact', 'request:close', 'wire:msg', 'tick'].forEach(function (ev) {
+    NW.bus.on(ev, evalTriggers);
   });
-  setInterval(function () { if (!running) evalTriggers(); }, 1200);
+  setInterval(evalTriggers, 1200);
 
   function start(id, fromIndex) {
     if (!scenes[id]) { console.warn('[director] unknown scene', id); return Promise.resolve(); }
-    return run(null, { scene: id, index: fromIndex || 0 });
+    if (running || starting) return Promise.resolve();
+    starting = true;
+    return sideIdle().then(function () {
+      starting = false;
+      running = true;
+      abort = false;
+      return runScene(id, fromIndex || 0);
+    }).catch(function (e) {
+      console.error('[director]', e);
+    }).then(function () {
+      running = false;
+      evalTriggers();
+    });
   }
 
-  /** Pick a restored shift back up wherever the night left off. */
+  /** Pick a restored shift back up where it left off. */
   function resume() {
     var r = S().story.running;
     if (S().flags.game_over) return false;
@@ -69,37 +92,19 @@
     });
   }
 
-  /**
-   * run(steps, opts)
-   *   opts.scene  — run a registered scene, checkpointing progress as it goes
-   *   otherwise   — run a loose list (triggers, branches); not checkpointed
-   */
-  function run(steps, opts) {
-    opts = opts || {};
-    if (running) { queue.push([steps, opts]); return Promise.resolve(); }
-    running = true;
-    abort = false;
-    var p = opts.scene ? runScene(opts.scene, opts.index || 0) : exec(steps.slice(), opts);
-    return p.then(function () {
-      running = false;
-      NW.bus.emit('story:step');
-      var nxt = queue.shift();
-      if (nxt) run(nxt[0], nxt[1]);
-      else evalTriggers();
-    }).catch(function (e) {
-      console.error('[director]', e);
-      running = false;
-      var nxt2 = queue.shift();
-      if (nxt2) run(nxt2[0], nxt2[1]);
+  /** Main track waits on the player: triggers may run, and finish before the story moves on. */
+  function hold(p, opts) {
+    if (opts.side) return p;
+    parked = true;
+    evalTriggers();
+    return p.then(function (v) {
+      parked = false;
+      return sideIdle().then(function () { return v; });
     });
   }
 
-  /**
-   * A scene records how far it has got after every step it completes. The
-   * checkpoint is only advanced once a step has actually finished, so a shift
-   * restored while the terminal was parked on a wait, a request or a reply
-   * re-enters on that same step and puts the question back on the screen.
-   */
+  /* A scene checkpoints after each finished step, so a restored shift re-enters
+     on the step it was parked on (the open question comes back). */
   function runScene(name, from) {
     var list = scenes[name];
     if (!list) return Promise.resolve();
@@ -126,39 +131,31 @@
     return next();
   }
 
-  /** Loose list — branches, triggers. Returns {goto} if it hits one. */
+  /** Loose list (branches, triggers). Resolves to {goto} if it hits one. */
   function exec(list, opts) {
     if (!list.length || abort) return Promise.resolve();
     var step = list.shift();
     if (step.goto) return Promise.resolve({ goto: step.goto });
     return doStep(step, opts).then(function (jump) {
-      if (jump && jump.steps) {
-        return exec(jump.steps.concat(list), opts);
-      }
+      if (jump && jump.steps) return exec(jump.steps.concat(list), opts);
       return exec(list, opts);
     });
-  }
-
-  function delayFor(step) {
-    if (step.delay !== undefined) return step.delay;
-    return 0;
   }
 
   function doStep(step, opts) {
     var st = S();
     var U = NW.util;
 
-    /* ── pure control ── */
+    /* ── control ── */
     if (step.pause !== undefined) return U.wait(step.pause);
-    if (step.wait) return NW.director.waitFor(step.wait, step.timeout);
-    if (step.waitEvidence) return NW.director.waitFor({ evidence: [].concat(step.waitEvidence) });
-    if (step.waitFlag) return NW.director.waitFor(step.waitFlag);
+    if (step.wait) return hold(waitFor(step.wait, step.timeout), opts);
+    if (step.waitEvidence) return hold(waitFor({ evidence: [].concat(step.waitEvidence) }), opts);
+    if (step.waitFlag) return hold(waitFor(step.waitFlag), opts);
     if (step.if) {
       if (NW.state.test(step.if)) return Promise.resolve({ steps: step.then || [] });
       return Promise.resolve({ steps: step.else || [] });
     }
     if (step.do) { var r = step.do(st); return Promise.resolve(r && r.steps ? r : undefined); }
-    if (step.goto) return Promise.resolve({ steps: scenes[step.goto] || [] });
 
     /* ── state ── */
     if (step.flag) { NW.state.flag(step.flag, step.value === undefined ? true : step.value); return Promise.resolve(); }
@@ -176,7 +173,7 @@
     if (step.unlockContact) { [].concat(step.unlockContact).forEach(function (i) { NW.state.unlock('contacts', i, true); }); NW.bus.emit('wire:contacts'); return Promise.resolve(); }
     if (step.evidence) { [].concat(step.evidence).forEach(function (i) { NW.state.addEvidence(i, step.quiet); }); return Promise.resolve(); }
     if (step.fact) { NW.state.addFact(step.fact.c || 'CASE', step.fact.t || step.fact); return Promise.resolve(); }
-    if (step.node) { NW.casebook && NW.casebook.addNode(step.node); return Promise.resolve(); }
+    if (step.node) { if (NW.casebook) NW.casebook.addNode(step.node); return Promise.resolve(); }
 
     /* ── presentation ── */
     if (step.objective !== undefined) { NW.notify.objective(step.objective, step.objDone); st.flags.__objective = step.objective; return Promise.resolve(); }
@@ -186,21 +183,15 @@
     if (step.sfx) { NW.audio.play(step.sfx); return Promise.resolve(); }
     if (step.glitch) { NW.notify.flash('desync'); return U.wait(500); }
     if (step.shake) { NW.notify.flash('shake'); return U.wait(500); }
-    if (step.chapter) {
-      return NW.notify.chapterCard(step.chapter.num, step.chapter.title, step.chapter.desc);
-    }
-    if (step.overlay) { return NW.notify.overlay(step.overlay); }
+    if (step.chapter) return NW.notify.chapterCard(step.chapter.num, step.chapter.title, step.chapter.desc);
+    if (step.overlay) return NW.notify.overlay(step.overlay);
     if (step.openApp) { NW.apps.open(step.openApp, step.arg); return U.wait(step.delay || 300); }
-    if (step.ending) { return NW.endings.play(step.ending); }
+    if (step.ending) return NW.endings.play(step.ending);
 
-    /* ── wire messages ── */
-    if (step.msg !== undefined || step.sys !== undefined || step.me !== undefined) {
-      return NW.wire.push(step);
-    }
-    if (step.ask) { return NW.wire.ask(step.ask); }
-    /* A gate is a single message the operator has to actually send. Nothing
-       moves on until they do — so the traffic above it can be read at whatever
-       pace they like. */
+    /* ── wire ── */
+    if (step.msg !== undefined || step.sys !== undefined || step.me !== undefined) return NW.wire.push(step);
+    if (step.ask) return NW.wire.ask(step.ask);
+    // a gate is one message the operator has to send before anything moves on
     if (step.gate) {
       return NW.wire.ask({
         prompt: step.gatePrompt || 'SEND WHEN YOU HAVE READ THE TRAFFIC',
@@ -212,7 +203,7 @@
       if (!NW.win.isOpen('wire')) NW.apps.open('wire');
       NW.bus.emit('wire:request');
       if (step.awaitAnswer === false) return Promise.resolve();
-      return NW.director.waitFor(function () { return !NW.request.current(); });
+      return hold(waitFor(function () { return !NW.request.current(); }), opts);
     }
 
     console.warn('[director] unhandled step', step);
@@ -220,7 +211,7 @@
   }
 
   NW.director = {
-    scene: scene, start: start, run: run, trigger: trigger, resume: resume,
+    scene: scene, start: start, trigger: trigger, resume: resume,
     waitFor: waitFor, evalTriggers: evalTriggers,
     isRunning: function () { return running; },
     scenes: scenes

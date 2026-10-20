@@ -1,18 +1,15 @@
-/* NIGHTWIRE — apps/shell.js — the local volume, and what is still on it */
+/* NIGHTWIRE — apps/shell.js — DOS-style shell over the terminal's local volume */
 (function (NW) {
   'use strict';
   var U = NW.util, el = U.el;
   var S = function () { return NW.state.s; };
 
-  function build(body) {
+  function build(body, win) {
     var v = { cwd: S().shellCwd || '/', prompt: null, hist: S().shellHistory || [], hi: -1 };
 
     var out = el('div.sh-out');
-    // A real shell takes its input where the last line stopped, not in a box
-    // bolted to the bottom of the window. The visible caret is drawn; the
-    // actual keystrokes go into an off-screen field so selection, history and
-    // the system keyboard all still behave.
-    var input = el('input.sh-hidden', { spellcheck: 'false', autocomplete: 'off', autocapitalize: 'off' });
+    // keystrokes go to an off-screen input; the prompt line and caret are drawn
+    var input =el('input.sh-hidden', { spellcheck: 'false', autocomplete: 'off', autocapitalize: 'off' });
     var lineEl = null;
     body.appendChild(el('div.app', null, [out, input]));
 
@@ -83,7 +80,9 @@
           'LOG         recent session log',
           'CLS         clear the screen',
           'VER         version',
-          'EXIT        close the shell'
+          'EXIT        close the shell',
+          '',
+          '<span class="sh-dim">TAB completes a file name · UP / DOWN recalls earlier commands</span>'
         ].join('\n'));
       },
       ver: function () { w('NCIB TERMINAL SHELL 3.11 — WIREDRV.SYS 2.04 — TERM04'); },
@@ -115,10 +114,11 @@
         w(' Directory of ' + dosPath(path).slice(0, -1));
         w('');
         var dirs = 0, files = 0;
+        if (showHidden && l.some(function (e) { return e.node.hidden; })) NW.state.flag('fs_reveal', true);
         l.forEach(function (e) {
           var isDir = e.node.t === 'dir';
-          // this line goes through innerHTML — an unescaped <DIR> is a tag
-          var size = isDir ? '&lt;DIR&gt;       ' : U.pad(U.hash(e.name) % 90000 + 200, 6) + '      ';
+          // written as HTML, so <DIR> must be escaped
+          var size =isDir ? '&lt;DIR&gt;       ' : U.pad(U.hash(e.name) % 90000 + 200, 6) + '      ';
           var hidden = e.node.hidden ? '  <span class="sh-dim">[H]</span>' : '';
           wraw(' ' + e.name.toUpperCase().padEnd(16) + size + hidden, isDir ? 'sh-ok' : '');
           if (isDir) dirs++; else files++;
@@ -218,9 +218,10 @@
           label: 'PASSPHRASE:',
           mask: true,
           fn: function (val) {
-            var key = String(val).toUpperCase().replace(/[^A-Z0-9]/g, '');
-            var want = n.key.toUpperCase();
-            var ok = key === want || key === want.replace('87', '1987') || key === want.replace('87', '') + '1987';
+            // "the road, and the year": accept MERCER87, MERCER 1987, MERCER ROAD 87, MERCER RD 1987…
+            var key = String(val).toUpperCase().replace(/[^A-Z0-9]/g, '')
+              .replace(/(ROAD|RD)(?=\d)/, '').replace(/19(\d\d)$/, '$1');
+            var ok = key === n.key.toUpperCase();
             if (!ok) {
               NW.audio.play('error');
               w('DECRYPT FAILED — key rejected.', 'sh-err');
@@ -277,10 +278,36 @@
       if (gr.fact) NW.state.addFact(gr.fact.c, gr.fact.t);
     }
 
+    /** Tab: complete the last word against the directory it points into. */
+    function complete() {
+      if (v.prompt) return;
+      var m = input.value.match(/^(.*?)(\S*)$/);
+      var head = m[1], tok = m[2];
+      var cut = Math.max(tok.lastIndexOf('\\'), tok.lastIndexOf('/'));
+      var dirPart = tok.slice(0, cut + 1), stem = tok.slice(cut + 1).toLowerCase();
+      var dir = dirPart ? NW.fs.resolve(v.cwd, dirPart) : v.cwd;
+      var hits = (NW.fs.listing(dir, false) || []).filter(function (e) {
+        return e.name.toLowerCase().indexOf(stem) === 0;
+      });
+      if (!hits.length) { NW.audio.play('error'); return; }
+      var names = hits.map(function (e) { return e.name.toUpperCase(); });
+      var common = names.reduce(function (a, b) {
+        var i = 0; while (i < a.length && a[i] === b[i]) i++;
+        return a.slice(0, i);
+      });
+      if (hits.length === 1) common += hits[0].node.t === 'dir' ? '\\' : ' ';
+      else if (common.length <= stem.length) {
+        // nothing more to fill in: list the candidates above the prompt
+        w(names.join('   '), 'sh-dim');
+      }
+      input.value = head + dirPart + common;
+      paintLine();
+    }
+
     function exec(raw) {
       var line = raw.trim();
 
-      // freeze the live line into the transcript exactly as it was typed
+      // freeze the typed line into the transcript
       var label = promptLabel();
       var echoed = (v.prompt && v.prompt.mask) ? new Array(raw.length + 1).join('*') : raw;
       if (lineEl && lineEl.parentNode) lineEl.parentNode.removeChild(lineEl);
@@ -314,6 +341,7 @@
         exec(val);
         return;
       }
+      if (e.key === 'Tab') { e.preventDefault(); complete(); return; }
       if (e.key === 'ArrowUp') {
         e.preventDefault();
         if (!v.hist.length) return;
@@ -343,10 +371,7 @@
       if (String(window.getSelection())) return;
       input.focus();
     });
-    var offFocus = NW.bus.on('win:focus', function (win) {
-      if (!NW.win.isOpen('shell')) { offFocus(); return; }
-      if (win && win.id === 'shell') input.focus();
-    });
+    win.listen('win:focus', function (w2) { if (w2 && w2.id === 'shell') input.focus(); });
 
     BANNER.forEach(function (l) { w(l, l.indexOf('NCIB') === 0 ? 'sh-ok' : ''); });
     newLine();

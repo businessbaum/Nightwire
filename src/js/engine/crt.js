@@ -1,8 +1,10 @@
-/* NIGHTWIRE — engine/crt.js — the physical screen effects */
+/* NIGHTWIRE — engine/crt.js — screen effects and phosphor themes */
 (function (NW) {
   'use strict';
   var U = NW.util;
-  var cv, g, w, h, raf = null, frame = 0;
+  var cv, g, w, h, frame = 0;
+  var frames = [], fi = 0;    // a few pre-rendered noise frames, cycled
+  var FRAME_COUNT = 8;
 
   function init() {
     cv = U.$('#noise');
@@ -19,24 +21,29 @@
     h = Math.max(1, Math.floor(cv.clientHeight / 3));
     cv.width = w; cv.height = h;
     g = cv.getContext('2d');
+    frames = [];
   }
 
-  function loop() {
-    raf = requestAnimationFrame(loop);
-    frame++;
-    if (!g || frame % 3) return;
+  function noiseFrame() {
     var img = g.createImageData(w, h);
     var d = img.data;
     for (var i = 0; i < d.length; i += 4) {
       var v = Math.random() * 255;
       d[i] = v; d[i + 1] = v * 0.75; d[i + 2] = v * 0.35; d[i + 3] = 255;
     }
-    g.putImageData(img, 0, 0);
+    return img;
+  }
+
+  function loop() {
+    requestAnimationFrame(loop);
+    frame++;
+    if (!g || frame % 3 || !NW.state.settings().noise) return;
+    if (frames.length < FRAME_COUNT) frames.push(noiseFrame());
+    g.putImageData(frames[fi++ % frames.length], 0, 0);
   }
 
   /* ══════════ PHOSPHOR ══════════
-     The canvas programs cannot read CSS variables, so the theme is resolved
-     once here and handed to them as numbers. */
+     Canvas code can't read CSS variables, so theme colours are resolved here. */
   var THEMES = [
     { id: 'ice',   name: 'ICE',   sub: 'COLD MONOCHROME · THE INSTITUTIONAL MONITOR' },
     { id: 'bone',  name: 'BONE',  sub: 'WARM PAPER-WHITE · THE QUIET ONE' },
@@ -65,8 +72,7 @@
     var t = THEMES.filter(function (x) { return x.id === id; })[0];
     if (lbl) lbl.textContent = 'CONSOLIDATED ELECTRIC · MODEL VT-880 · ' + t.name;
     NW.bus.emit('theme', id);
-    // the canvas programs cache nothing about colour, but they only repaint on
-    // demand — nudge whatever is open so the swap is immediate
+    // canvases only repaint on demand; nudge open windows so the swap shows now
     if (NW.win) NW.win.all().forEach(function (w) { NW.bus.emit('win:resize', w); });
     if (NW.apps) NW.apps.renderRail();
   }
@@ -85,7 +91,7 @@
     NW.audio.setInput(s.keys === undefined ? 0.7 : s.keys);
   }
 
-  /** brief power-on ramp */
+  /** Brief power-on flash. */
   function powerOn() {
     var scr = U.$('#screen');
     scr.style.transition = 'none';

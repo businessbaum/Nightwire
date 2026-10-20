@@ -265,6 +265,14 @@
       renderSide();
     }
 
+    // a new intercept can arrive while the desk is open
+    win.listen('flag', function (d) {
+      if (!INTERCEPTS.some(function (c) { return c.requires === d.key; })) return;
+      renderSide();
+      if (!v.sel) select(INTERCEPTS.filter(function (c) { return c.requires === d.key; })[0].id);
+    });
+    win.selectIntercept = function (id) { if (INTERCEPTS.some(function (c) { return c.id === id; })) select(id); };
+
     renderSide(); renderTools(); renderMain();
     if (arg && INTERCEPTS.some(function (c) { return c.id === arg; })) select(arg);
     else {
@@ -278,7 +286,7 @@
     hint: 'shift, running key, substitution, reference',
     win: { w: 780, h: 620, min: [620, 460] },
     build: build,
-    onFocus: function () {}
+    onFocus: function (win, arg) { if (arg && win.selectIntercept) win.selectIntercept(arg); }
   });
 
   NW.cipher = { caesar: caesar, vigenere: vigenere };

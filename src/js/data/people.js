@@ -1,11 +1,9 @@
-/* NIGHTWIRE — data/people.js
-   The Central Person Index. Records the player can search, read and transmit. */
+/* NIGHTWIRE — data/people.js — the person index searched in REGISTRY */
 (function (NW) {
   'use strict';
 
   /* index:  'crim'  criminal history index
              'civ'   civil / licensing index
-             'dec'   decedent index
              'per'   NCIB personnel  (clearance 2)
              'wit'   sealed federal witness index (clearance 3) */
 
@@ -406,11 +404,11 @@
 
   function get(id) { return byId[id]; }
 
-  /** Search across the visible indices. */
+  /** search(query, {index, clearance}) — records above the clearance stay hidden unless unlocked. */
   function search(q, opts) {
     opts = opts || {};
     var st = NW.state.s;
-    var clr = st.operator.clearance;
+    var clr = opts.clearance || st.operator.clearance;
     return P.filter(function (p) {
       if (opts.index && p.index !== opts.index) return false;
       if ((p.clearance || 1) > clr && !st.records[p.id]) return false;

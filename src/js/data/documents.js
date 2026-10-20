@@ -1,5 +1,4 @@
-/* NIGHTWIRE — data/documents.js
-   The Archive. Everything here renders as a scanned sheet of 1990s paperwork. */
+/* NIGHTWIRE — data/documents.js — archive documents, rendered as 1990s paperwork */
 (function (NW) {
   'use strict';
 
@@ -507,6 +506,7 @@ CLOSED "COMPLETE" 03/20/1998 BY REQUESTOR.]</p>`
       ${f('TERM', '25 YEARS FROM 07/01/1994')}
       ${f('RENT', '<b>$1.00 PER ANNUM</b>')}
       ${f('PERMITTED USE', '<b>RECORDS STORAGE — NON-PUBLIC</b>')}
+      ${f('PLAN — BLDG B', 'GROUND: ADMINISTRATION · FIRST FLOOR, NORTH WING: WARDS 11–18')}
       <h3 class="p-h">CONDITIONS</h3>
       <p>Lessee shall maintain the perimeter and shall not admit the public. The State shall have no
       right of entry except on ninety (90) days' written notice.</p>

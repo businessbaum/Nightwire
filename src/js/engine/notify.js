@@ -2,6 +2,7 @@
 (function (NW) {
   'use strict';
   var U = NW.util, el = U.el;
+  var MAX_TOASTS = 5;
 
   function push(o) {
     var host = U.$('#toasts');
@@ -11,6 +12,7 @@
       el('div.t-b', { text: o.body || '' })
     ]);
     host.appendChild(t);
+    while (host.children.length > MAX_TOASTS) host.removeChild(host.firstChild);
     NW.audio.play(o.kind === 'bad' ? 'error' : o.kind === 'good' ? 'ok' : 'beep');
     setTimeout(function () {
       t.classList.add('out');
@@ -50,41 +52,71 @@
     n.classList.toggle('urgent', !!urgent);
   }
 
-  /** Modal overlay. buttons:[{label, value, cls}] → Promise(value) */
-  var pendingOverlay = null;
+  /* ── modal overlays: one on screen, the rest wait their turn ── */
+  var queue = [];
+  var current = null;
+
+  /** overlay({title, sub, body:[html], html, cls, buttons:[{label, value, cls}]}) → Promise(value)
+      Enter picks the first button (unless it is a danger button), Escape the last. */
   function overlay(spec) {
-    var layer = U.$('#overlay-layer');
-    if (pendingOverlay) { var p = pendingOverlay; pendingOverlay = null; p(null); }
-    U.clear(layer);
-    layer.classList.remove('hidden');
     return new Promise(function (resolve) {
-      pendingOverlay = resolve;
-      var card = el('div.ov-card' + (spec.cls ? '.' + spec.cls : ''));
-      if (spec.html) card.innerHTML = spec.html;
-      else {
-        if (spec.title) card.appendChild(el('h2', { text: spec.title }));
-        if (spec.sub) card.appendChild(el('div.ov-sub', { text: spec.sub }));
-        (spec.body || []).forEach(function (p) { card.appendChild(el('p', { html: p })); });
-      }
-      var acts = el('div.ov-actions');
-      (spec.buttons || [{ label: 'CONTINUE', value: true }]).forEach(function (b) {
-        var btn = el('button.ov-btn', { text: b.label, class: b.cls || '' });
-        U.on(btn, 'click', function () {
-          NW.audio.play('click');
-          layer.classList.add('hidden');
-          U.clear(layer);
-          pendingOverlay = null;
-          resolve(b.value);
-        });
-        acts.appendChild(btn);
-      });
-      card.appendChild(acts);
-      layer.appendChild(card);
+      queue.push({ spec: spec, resolve: resolve });
+      if (!current) showNext();
     });
   }
 
-  /** In-terminal confirmation. Never use the browser's own dialog — it stops
-      the clock, steals focus and looks like somebody else's software. */
+  function showNext() {
+    var item = queue.shift();
+    if (!item) { current = null; return; }
+    var spec = item.spec;
+    var layer = U.$('#overlay-layer');
+    var me = {};
+    current = me;
+    U.clear(layer);
+    layer.classList.remove('hidden');
+
+    var card = el('div.ov-card' + (spec.cls ? '.' + spec.cls : ''));
+    if (spec.html) card.innerHTML = spec.html;
+    else {
+      if (spec.title) card.appendChild(el('h2', { text: spec.title }));
+      if (spec.sub) card.appendChild(el('div.ov-sub', { text: spec.sub }));
+      (spec.body || []).forEach(function (p) { card.appendChild(el('p', { html: p })); });
+    }
+
+    function finish(value) {
+      if (current !== me) return;
+      document.removeEventListener('keydown', onKey, true);
+      NW.audio.play('click');
+      layer.classList.add('hidden');
+      U.clear(layer);
+      current = null;
+      item.resolve(value);
+      showNext();
+    }
+
+    var buttons = spec.buttons || [{ label: 'CONTINUE', value: true }];
+    var acts = el('div.ov-actions');
+    buttons.forEach(function (b) {
+      var btn = el('button.ov-btn', { text: b.label, class: b.cls || '' });
+      U.on(btn, 'click', function () { finish(b.value); });
+      acts.appendChild(btn);
+    });
+    card.appendChild(acts);
+    layer.appendChild(card);
+
+    // the overlay is modal, so it takes the keyboard while it is up
+    function onKey(e) {
+      var pick;
+      if (e.key === 'Enter' || e.key === ' ') pick = buttons[0].cls === 'danger' ? null : buttons[0];
+      else if (e.key === 'Escape') pick = buttons[buttons.length - 1];
+      else return;
+      e.preventDefault(); e.stopPropagation();
+      if (pick && !e.repeat) finish(pick.value);
+    }
+    document.addEventListener('keydown', onKey, true);
+  }
+
+  /** In-terminal confirmation (never the browser's own dialog). */
   function ask(title, body, okLabel, danger) {
     NW.audio.play('beep');
     return overlay({
@@ -122,7 +154,7 @@
     }
   }
 
-  function overlayOpen() { return !!pendingOverlay; }
+  function overlayOpen() { return !!current; }
 
   NW.notify = { push: push, ticker: ticker, objective: objective, caseLabel: caseLabel,
                 overlay: overlay, ask: ask, chapterCard: chapterCard, flash: flashScreen,

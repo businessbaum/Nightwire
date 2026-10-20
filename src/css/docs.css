@@ -58,8 +58,7 @@
 .stamp.blue { border-color: #2a4a86; color: #2a4a86; }
 .stamp.green { border-color: #2c6b3a; color: #2c6b3a; }
 
-/* A previous reader went through these with a highlighter. Not everything
-   marked is an answer — it is what a tired analyst would not want to miss. */
+/* highlighter marks on key passages */
 .paper b, .paper mark {
   background: linear-gradient(0deg,
     rgba(214,176,40,.46) 0%, rgba(214,176,40,.46) 64%, rgba(214,176,40,.14) 64%);

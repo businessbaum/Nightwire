@@ -171,7 +171,7 @@
     NW.apps.open('wire');
     NW.notify.push({ head: 'SHIFT RESTORED', body: 'Chapter ' + s.chapter + ' · ' + U.fmtTime(s.clock), kind: 'info' });
     setTimeout(function () {
-      // pick the night back up exactly where it was interrupted
+      // continue the story where it was interrupted
       if (!NW.director.resume()) NW.director.evalTriggers();
     }, 1200);
   }

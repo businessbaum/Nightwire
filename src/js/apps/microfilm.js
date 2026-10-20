@@ -1,6 +1,5 @@
 /* NIGHTWIRE — apps/microfilm.js
-   County reel reader. Frames are rendered newsprint; the focus knob is real,
-   and the interesting frames are the ones somebody spliced out. */
+   County reel reader: wind to a frame, find focus, copy what matters. */
 (function (NW) {
   'use strict';
   var U = NW.util, el = U.el;
@@ -37,8 +36,8 @@
     'QUARRY BLASTING SCHEDULE POSTED FOR MONTH', 'OBITUARIES', 'CLASSIFIED — HELP WANTED',
     'LEGAL NOTICES', 'CHURCH SUPPER RAISES $412', 'HARBOUR DREDGING BID AWARDED'];
 
-  function build(body) {
-    var v = { reel: null, frame: 1, focus: 0.55, mag: 1 };
+  function build(body, win) {
+    var v = { reel: null, frame: 1, focus: 0.55 };
     var W = 620, H = 430;
 
     var tools = el('div.toolbar');
@@ -66,7 +65,7 @@
       NW.audio.play('disk');
       reelSlider.max = r.frames; reelSlider.value = 1;
       focusSlider.value = v.focus;
-      renderTools(); draw(); renderCtrl();
+      renderTools(); draw(); renderInfo();
     }
 
     function targetAt(f) {
@@ -166,27 +165,34 @@
       g.fillText('FOCUS ' + (blur < 0.6 ? 'SHARP' : blur < 3 ? 'SOFT' : 'OUT'), 8, H - 8);
     }
 
+    // sliders are built once; only the frame number and info box change
     var reelSlider = el('input', { type: 'range', min: 1, max: 60, step: 1, value: 1 });
     U.on(reelSlider, 'input', function () {
       v.frame = parseInt(reelSlider.value, 10);
       NW.audio.play('type');
-      draw(); renderCtrl();
+      draw(); renderInfo();
     });
     var focusSlider = el('input', { type: 'range', min: 0, max: 1, step: 0.01, value: 0.55 });
     U.on(focusSlider, 'input', function () { v.focus = parseFloat(focusSlider.value); draw(); });
+    var frameNo = el('span.mf-frameno');
+    var box = el('div', { style: { minHeight: '44px', marginTop: '6px', fontSize: '11px' } });
+    ctrl.appendChild(el('div.mf-reel', null, [el('span.mfr-lbl', { text: 'ADVANCE' }), reelSlider, frameNo]));
+    ctrl.appendChild(el('div.mf-reel', null, [el('span.mfr-lbl', { text: 'FOCUS' }), focusSlider, el('span.mf-frameno')]));
+    ctrl.appendChild(box);
 
-    function renderCtrl() {
-      U.clear(ctrl);
-      ctrl.appendChild(el('div.mf-reel', null, [
-        el('span.mfr-lbl', { text: 'ADVANCE' }), reelSlider,
-        el('span.mf-frameno', { text: 'FRAME ' + U.pad(v.frame, 3) + ' / ' + (v.reel ? v.reel.frames : '—') })
-      ]));
-      ctrl.appendChild(el('div.mf-reel', null, [
-        el('span.mfr-lbl', { text: 'FOCUS' }), focusSlider,
-        el('span.mf-frameno', { text: '' })
-      ]));
+    // keyboard: left/right winds one frame
+    win.wind = function (d) {
+      if (!v.reel) return;
+      v.frame = U.clamp(v.frame + d, 1, v.reel.frames);
+      reelSlider.value = v.frame;
+      NW.audio.play('type');
+      draw(); renderInfo();
+    };
+
+    function renderInfo() {
+      frameNo.textContent = 'FRAME ' + U.pad(v.frame, 3) + ' / ' + (v.reel ? v.reel.frames : '—');
+      U.clear(box);
       var t = targetAt(v.frame);
-      var box = el('div', { style: { minHeight: '44px', marginTop: '6px', fontSize: '11px' } });
       if (!v.reel) box.innerHTML = '<span class="dim">Mount a reel.</span>';
       else if (!t) box.innerHTML = '<span class="dim">Ordinary page. Keep winding.</span>';
       else {
@@ -200,22 +206,29 @@
           if (t.doc) { NW.state.unlock('docs', t.doc, true); NW.notify.push({ head: 'COPIED TO ARCHIVE', body: t.title, kind: 'good' }); }
           if (t.evidence) NW.state.addEvidence(t.evidence);
           NW.state.addFact('MICROFILM', t.title + ' — ' + t.note);
-          renderCtrl();
+          renderInfo();
         });
         box.appendChild(b);
       }
-      ctrl.appendChild(box);
     }
+
+    // the 1994 reel arrives in chapter five
+    win.listen('chapter', renderTools);
+    win.listen('theme', draw);
 
     renderTools();
     var first = REELS.filter(function (r) { return !r.requires || NW.state.has(r.requires); })[0];
-    if (first) mount(first); else { draw(); renderCtrl(); }
+    if (first) mount(first); else { draw(); renderInfo(); }
   }
 
   NW.apps.define({
     id: 'microfilm', name: 'MICROFILM', short: 'FILM', icon: 'microfilm',
     hint: 'county reel reader',
     win: { w: 680, h: 620, min: [660, 580], resizable: false },
-    build: build
+    build: build,
+    onKey: function (e, win) {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { win.wind(e.key === 'ArrowLeft' ? -1 : 1); return true; }
+      return false;
+    }
   });
 })(window.NW);

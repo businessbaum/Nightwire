@@ -1,11 +1,12 @@
-/* NIGHTWIRE — engine/audio.js
-   Every sound in this game is synthesised at runtime. No audio files exist. */
+/* NIGHTWIRE — engine/audio.js — all sound is synthesised at runtime */
 (function (NW) {
   'use strict';
 
   var ctx = null, master = null, ambientGain = null, sfxGain = null, inputGain = null;
   var started = false;
   var ambientNodes = [];
+  var noiseBuf = null;   // shared white noise; bursts play random slices of it
+  var NOISE_SECS = 4;
 
   function ensure() {
     if (ctx) return ctx;
@@ -16,6 +17,9 @@
     sfxGain = ctx.createGain(); sfxGain.gain.value = 0.55; sfxGain.connect(master);
     ambientGain = ctx.createGain(); ambientGain.gain.value = 0.0; ambientGain.connect(master);
     inputGain = ctx.createGain(); inputGain.gain.value = 0.7; inputGain.connect(master);
+    noiseBuf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * NOISE_SECS), ctx.sampleRate);
+    var nd = noiseBuf.getChannelData(0);
+    for (var i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
     return ctx;
   }
 
@@ -23,8 +27,7 @@
     ensure();
     if (ctx && ctx.state === 'suspended') ctx.resume();
     started = true;
-    // The gain nodes only exist from here on, so the stored volumes have to be
-    // pushed again — the first applySettings() ran before there was a graph.
+    // the gain nodes only exist now, so push the stored volumes again
     if (NW.crt && NW.crt.applySettings) NW.crt.applySettings();
   }
 
@@ -57,13 +60,9 @@
   function noise(o) {
     if (!ensure()) return;
     o = o || {};
-    var dur = o.dur || 0.1;
+    var dur = Math.min(o.dur || 0.1, NOISE_SECS - 0.1);
     var t0 = now() + (o.delay || 0);
-    var len = Math.max(1, Math.floor(ctx.sampleRate * dur));
-    var buf = ctx.createBuffer(1, len, ctx.sampleRate);
-    var d = buf.getChannelData(0);
-    for (var i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-    var src = ctx.createBufferSource(); src.buffer = buf;
+    var src = ctx.createBufferSource(); src.buffer = noiseBuf;
     var bq = ctx.createBiquadFilter();
     bq.type = o.filter || 'bandpass'; bq.frequency.value = o.fc || 2000; bq.Q.value = o.q || 1;
     var g = ctx.createGain();
@@ -71,28 +70,39 @@
     g.gain.setValueAtTime(vol, t0);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
     src.connect(bq); bq.connect(g); g.connect(o.dest || sfxGain);
-    src.start(t0); src.stop(t0 + dur + 0.02);
+    src.start(t0, Math.random() * (NOISE_SECS - dur - 0.05));
+    src.stop(t0 + dur + 0.02);
   }
 
-  /** Play a raw mono Float32Array at a given sample rate. Returns a handle. */
+  /** Play a mono Float32Array. opts: {vol, highpass, lowpass, offset, rate}.
+      The handle can retune its filters and volume while playing. */
+  var bufferCache = typeof WeakMap === 'function' ? new WeakMap() : null;
   function playBuffer(data, sampleRate, opts) {
     if (!ensure()) return null;
     opts = opts || {};
-    var buf = ctx.createBuffer(1, data.length, sampleRate || ctx.sampleRate);
-    buf.getChannelData(0).set(data);
+    var rate = sampleRate || ctx.sampleRate;
+    var buf = bufferCache && bufferCache.get(data);
+    if (!buf || buf.sampleRate !== rate) {
+      buf = ctx.createBuffer(1, data.length, rate);
+      buf.getChannelData(0).set(data);
+      if (bufferCache) bufferCache.set(data, buf);
+    }
     var src = ctx.createBufferSource(); src.buffer = buf;
     var g = ctx.createGain(); g.gain.value = opts.vol === undefined ? 0.8 : opts.vol;
-    var last = g;
-    var chain = [];
-    if (opts.highpass) { var hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = opts.highpass; chain.push(hp); }
-    if (opts.lowpass) { var lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = opts.lowpass; chain.push(lp); }
-    src.connect(g);
-    chain.forEach(function (n) { last.connect(n); last = n; });
-    last.connect(sfxGain);
+    var hp = ctx.createBiquadFilter(); hp.type = 'highpass';
+    var lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
+    function setFilter(h, l) {
+      hp.frequency.value = h || 10;
+      lp.frequency.value = l || ctx.sampleRate / 2;
+    }
+    setFilter(opts.highpass, opts.lowpass);
+    src.connect(g); g.connect(hp); hp.connect(lp); lp.connect(sfxGain);
     src.playbackRate.value = opts.rate || 1;
     src.start(0, opts.offset || 0);
     return {
       src: src, gain: g,
+      setFilter: setFilter,
+      setVolume: function (v) { g.gain.value = v; },
       stop: function () { try { src.stop(); } catch (e) {} },
       onended: function (fn) { src.onended = fn; }
     };
@@ -128,11 +138,9 @@
     shutter:  function () { noise({ dur: 0.03, fc: 3000, q: 3, vol: 0.12 }); noise({ dur: 0.05, fc: 1200, q: 3, vol: 0.08, delay: 0.05 }); }
   };
 
-  /* ══════════ THE KEYBOARD AND THE MOUSE ══════════
-     A key press on a 1990s office board is three sounds stacked: the switch
-     transient, the keycap arriving on the plate, and the plate itself ringing.
-     Releasing it makes a fourth, quieter one. Every press is detuned slightly
-     so that fast typing does not turn into a loop. */
+  /* ══════════ KEYBOARD AND MOUSE ══════════
+     A key press is a few stacked layers (switch click, keycap, plate ring,
+     desk thock), detuned per press so fast typing does not sound looped. */
 
   var lastInput = 0;
   function rnd(a, b) { return a + Math.random() * (b - a); }
@@ -242,11 +250,7 @@
     osc(120, 'sine', 0.10);
     osc(15734, 'sine', 0.012);      // CRT flyback whine
     // ventilation
-    var len = ctx.sampleRate * 4;
-    var b = ctx.createBuffer(1, len, ctx.sampleRate);
-    var d = b.getChannelData(0);
-    for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1);
-    var s = ctx.createBufferSource(); s.buffer = b; s.loop = true;
+    var s = ctx.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
     var f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 340;
     var g2 = ctx.createGain(); g2.gain.value = 0.30;
     s.connect(f); f.connect(g2); g2.connect(ambientGain); s.start();
@@ -260,9 +264,7 @@
 
   function play(name) {
     if (!started) return;
-    // The physical keyboard/mouse layer is driven globally from main.js, so a
-    // widget asking for its own 'key'/'click' right after a real press would
-    // just double it up. Let the hardware win.
+    // real key/mouse presses already click (see main.js); don't double them
     if ((name === 'key' || name === 'click') && Date.now() - lastInput < 90) return;
     var f = lib[name];
     if (f) { try { f(); } catch (e) {} }

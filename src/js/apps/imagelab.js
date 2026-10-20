@@ -1,6 +1,6 @@
 /* NIGHTWIRE — apps/imagelab.js
-   Photographic enhancement. Detail is drawn into the source at a contrast the
-   eye cannot resolve; the operator has to push the image until it surfaces. */
+   Photo enhancement. Clues are drawn at very low contrast and only show once
+   the operator pushes the image. */
 (function (NW) {
   'use strict';
   var U = NW.util, el = U.el;
@@ -37,7 +37,8 @@
       cv.width = w; cv.height = h;
       draw();
     }
-    NW.bus.on('win:resize', function (wn) { if (wn.id === 'imagelab') fitCanvas(); });
+    win.listen('win:resize', function (wn) { if (wn.id === 'imagelab') fitCanvas(); });
+    win.listen('flag', function (d) { if (/^photo_/.test(d.key)) renderTools(); });
 
     function renderTools() {
       U.clear(tools);
@@ -109,9 +110,7 @@
     btns.appendChild(bInv); btns.appendChild(bEdge); btns.appendChild(bRes);
     ctrl.appendChild(btns);
 
-    /* ── pan ──
-       util.drag hands over the delta from where the drag started, not from the
-       last frame, so the movement has to be differenced or the view bolts. */
+    /* ── pan ── (util.drag reports the delta since drag start, so difference it) */
     var lastDx = 0, lastDy = 0;
     U.drag(cv, function () { lastDx = 0; lastDy = 0; cv.classList.add('grabbing'); }, function (dx, dy) {
       var ix = dx - lastDx, iy = dy - lastDy;
@@ -151,9 +150,8 @@
         else if (d < f.r * 2.6) { if (lit) warm = warm || f; else near = near || f; }
       });
 
-      // always show where the click actually landed — if the operator and the
-      // program disagree about where they are pointing, that must be visible
-      v.ping = { u: u, w: w, t: Date.now(), ok: !!hit };
+      // always show where the click landed
+      v.ping ={ u: u, w: w, t: Date.now(), ok: !!hit };
       draw();
       setTimeout(function () { if (v.ping && Date.now() - v.ping.t > 900) { v.ping = null; draw(); } }, 1000);
 
@@ -189,20 +187,12 @@
     }
 
     /* ── render ── */
-    function draw() {
-      if (!v.ph) {
-        g.fillStyle = '#0a0805'; g.fillRect(0, 0, cv.width, cv.height);
-        g.fillStyle = 'rgba(' + NW.theme.rgb().join(',') + ',.4)'; g.font = '12px "Consolas",monospace'; g.textAlign = 'center';
-        g.fillText('NO EXHIBIT LOADED', cv.width / 2, cv.height / 2);
-        return;
-      }
-      var src = source(v.ph);
-      var sw = SRC_W / v.zoom, sh = SRC_H / v.zoom;
-      var sx = U.clamp(v.cx * SRC_W - sw / 2, 0, SRC_W - sw);
-      var sy = U.clamp(v.cy * SRC_H - sh / 2, 0, SRC_H - sh);
+    var frame = { key: null, img: null };
+    var LUT_N = 1024;
 
+    function process(sx, sy, sw, sh) {
       g.imageSmoothingEnabled = v.zoom < 3;
-      g.drawImage(src, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
+      g.drawImage(source(v.ph), sx, sy, sw, sh, 0, 0, cv.width, cv.height);
 
       var TINT = NW.theme.rgb();
       var img = g.getImageData(0, 0, cv.width, cv.height);
@@ -224,19 +214,47 @@
         }
         lum = out;
       }
+
+      // brightness / contrast / gamma / invert as a lookup table over luminance.
+      // Clues are bright marks on dark ground, so only blown highlights count as
+      // clipping; crushing the blacks is how they are found.
+      var lut = new Float32Array(LUT_N + 1), clipAt = new Uint8Array(LUT_N + 1);
       var invG = 1 / v.gamma;
-      var clipped = 0, total = 0;
+      for (var q = 0; q <= LUT_N; q++) {
+        var x2 = (q / LUT_N - 0.5) * v.contrast + 0.5 + v.bright;
+        clipAt[q] = x2 >= 1 ? 1 : 0;
+        x2 = Math.pow(x2 < 0 ? 0 : x2 > 1 ? 1 : x2, invG);
+        lut[q] = v.invert ? 1 - x2 : x2;
+      }
+      var clipped = 0;
       for (var j = 0, m = 0; j < d.length; j += 4, m++) {
-        var x2 = (lum[m] - 0.5) * v.contrast + 0.5 + v.bright;
-        if (x2 <= 0 || x2 >= 1) clipped++;
-        total++;
-        x2 = x2 < 0 ? 0 : x2 > 1 ? 1 : x2;
-        x2 = Math.pow(x2, invG);
-        if (v.invert) x2 = 1 - x2;
-        d[j] = x2 * TINT[0]; d[j + 1] = x2 * TINT[1]; d[j + 2] = x2 * TINT[2];
+        var li = (lum[m] * LUT_N) | 0;
+        var val = lut[li];
+        clipped += clipAt[li];
+        d[j] = val * TINT[0]; d[j + 1] = val * TINT[1]; d[j + 2] = val * TINT[2];
       }
       g.putImageData(img, 0, 0);
-      v.clip = clipped / Math.max(1, total);
+      frame.img = img;
+      v.clip = clipped / Math.max(1, lum.length);
+    }
+
+    function draw() {
+      if (!v.ph) {
+        g.fillStyle = '#0a0805'; g.fillRect(0, 0, cv.width, cv.height);
+        g.fillStyle = 'rgba(' + NW.theme.rgb().join(',') + ',.4)'; g.font = '12px "Consolas",monospace'; g.textAlign = 'center';
+        g.fillText('NO EXHIBIT LOADED', cv.width / 2, cv.height / 2);
+        return;
+      }
+      var sw = SRC_W / v.zoom, sh = SRC_H / v.zoom;
+      var sx = U.clamp(v.cx * SRC_W - sw / 2, 0, SRC_W - sw);
+      var sy = U.clamp(v.cy * SRC_H - sh / 2, 0, SRC_H - sh);
+
+      // the processed frame only changes with the view settings; marks and the
+      // click ping are drawn on top of the cached copy
+      var key = [v.ph.id, v.zoom, v.cx, v.cy, v.bright, v.contrast, v.gamma, v.invert, v.edge,
+                 cv.width, cv.height, NW.theme.current()].join('|');
+      if (frame.key === key) g.putImageData(frame.img, 0, 0);
+      else { process(sx, sy, sw, sh); frame.key = key; }
 
       // marks
       v.ph.finds.forEach(function (f) {
@@ -271,11 +289,16 @@
       g.moveTo(0, cv.height / 2); g.lineTo(cv.width, cv.height / 2); g.stroke();
       g.fillStyle = 'rgba(' + NW.theme.rgb().join(',') + ',.55)'; g.font = '9px "Consolas",monospace'; g.textAlign = 'left';
       g.fillText('×' + v.zoom.toFixed(1) + '  C' + v.contrast.toFixed(2) + '  γ' + v.gamma.toFixed(2), 6, cv.height - 6);
-      if (v.clip > 0.42) {
+      if (v.clip > 0.3) {
         g.fillStyle = '#ff5340';
-        g.fillText('⚠ ' + Math.round(v.clip * 100) + '% OF THE FRAME IS CLIPPED — DETAIL IS BEING DESTROYED', 6, 14);
+        g.fillText('⚠ ' + Math.round(v.clip * 100) + '% OF THE FRAME IS BLOWN OUT — DETAIL IS BEING DESTROYED', 6, 14);
       }
     }
+
+    win.showPhoto = function (id) {
+      renderTools();
+      if (id && NW.media.photo(id) && (!v.ph || v.ph.id !== id)) load(id);
+    };
 
     renderTools();
     var first = (arg && NW.media.photo(arg)) ? arg : (NW.media.availablePhotos()[0] || {}).id;
@@ -288,6 +311,6 @@
     hint: 'photographic enhancement',
     win: { w: 760, h: 640, min: [560, 460] },
     build: build,
-    onFocus: function (win, arg) { /* re-open handled by rebuild */ }
+    onFocus: function (win, arg) { if (win.showPhoto) win.showPhoto(arg); }
   });
 })(window.NW);

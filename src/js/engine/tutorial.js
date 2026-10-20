@@ -1,7 +1,6 @@
 /* NIGHTWIRE — engine/tutorial.js
-   The first time a program is opened it explains itself once, in the voice of
-   somebody who has sat at this desk for twenty years. After that it never
-   speaks again unless asked (MANUAL → HOW TO WORK THIS DESK). */
+   Each program explains itself once, on first open. The cards can be re-read
+   in MANUAL → HOW TO WORK THIS DESK. */
 (function (NW) {
   'use strict';
   var S = function () { return NW.state.s; };
@@ -15,7 +14,7 @@
         'When somebody wants an answer, a <b>request</b> appears at the bottom of this window with empty fields. You fill it from the other programs: open the right record and press <b>▸ TRANSMIT</b> on it, and it drops into the matching field.',
         'Some fields are a choice instead. Those are written out as statements — pick the one you are prepared to put your name to.',
         'A rejected report costs nothing but your standing with the field. It is still better to say <i>stand by</i> than to guess.',
-        '<span class="dim">Click anywhere in the message log to let a long message land all at once.</span>'
+        '<span class="dim">Click anywhere in the message log to let a long message land all at once. With this window in front, the number keys pick a reply.</span>'
       ]
     },
     registry: {
@@ -53,7 +52,7 @@
       body: [
         'The detail you want is in the frame at a contrast the eye cannot resolve. <b>Push CONTRAST up</b> until the shadows separate — usually somewhere between 1.4× and 2.0×.',
         'Then <b>click directly on whatever appears</b>. The terminal answers you: <i>close</i> means you are in the right part of the frame, <i>under-exposed</i> means something is there and your settings are hiding it.',
-        'Wheel to zoom, drag to pan. If the warning says the frame is clipping, you have gone too far and are destroying the thing you are looking for.'
+        'Wheel to zoom, drag to pan. Most of the frame going black is fine. If the warning says the frame is <b>blown out</b>, you have pushed too far and are burning away the thing you are looking for.'
       ]
     },
     audiolab: {
@@ -110,7 +109,8 @@
       sub: 'THE OUTSIDE LINE',
       body: [
         'Every telephone number in this case is dialable, and they are printed on records, in documents and in evidence. The list on the left is what you have collected.',
-        'People open up in stages. A topic that is greyed out becomes available once you hold the document that lets you ask about it — <b>so call the same person again after you have found something new</b>.',
+        'Type the number on your keyboard and press Enter, or click it on the list.',
+        'People open up in stages. New topics appear once you hold the document that lets you ask about them — <b>so call the same person again after you have found something new</b>. A <span style="color:var(--green)">●</span> on the list means somebody has something new to say.',
         'Some of them will lie to you. Let them, then read them their own bank statement.'
       ]
     },
@@ -118,7 +118,7 @@
       title: 'SHELL',
       sub: 'THE LOCAL VOLUME',
       body: [
-        'Type where the cursor is — the prompt sits at the end of the transcript, like any terminal. <code>HELP</code> gives the command list, and the up arrow walks back through what you have typed.',
+        'Type where the cursor is — the prompt sits at the end of the transcript, like any terminal. <code>HELP</code> gives the command list, the up arrow walks back through what you have typed, and <b>Tab</b> completes a file name.',
         '<code>DIR</code> lists a directory — but <b><code>DIR /A</code> lists the hidden entries too</b>, and <code>FIND &lt;word&gt;</code> searches the whole volume.',
         '<code>CD</code> moves, <code>TYPE</code> prints a file, <code>DECRYPT</code> asks you for a passphrase.',
         'The operator before you did not get her terminal wiped. Everything she had is still under your login.'
@@ -180,17 +180,12 @@
     });
   }
 
-  /** Called on the first open of each program. Waits its turn if the story is
-      already holding the screen. */
+  /** First open of a program. Overlays queue, so this waits behind anything already up. */
   function maybeShow(id) {
     if (!CARDS[id]) return;
     if (S().flags['tut_' + id]) return;
     NW.state.flag('tut_' + id, true);
-    var tries = 0;
-    (function pop() {
-      if (NW.notify.overlayOpen() && tries++ < 60) { setTimeout(pop, 700); return; }
-      setTimeout(function () { show(id); }, 380);
-    })();
+    setTimeout(function () { show(id); }, 380);
   }
 
   NW.tutorial = { show: show, maybeShow: maybeShow, cards: CARDS };

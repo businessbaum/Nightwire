@@ -125,7 +125,7 @@
     { msg: 'reyes', cls: 'alert', text: "Operator — is there another way out of that building? Fast." },
     { objective: 'IS THERE A SECOND EXIT?' },
     { ask: { prompt: 'RESPONSE WINDOW', timer: 18, options: [
-      { label: "Stand by — checking the lease plan.", reply: "Stand by. Ninety seconds.",
+      { label: "Stand by — checking.", reply: "Stand by. Ninety seconds.",
         steps: [
           { pause: 2400 },
           { msg: 'reyes', text: "Ninety seconds is ninety seconds. Talk." },

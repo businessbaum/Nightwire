@@ -1,4 +1,4 @@
-/* NIGHTWIRE — engine/windows.js — draggable / resizable window manager */
+/* NIGHTWIRE — engine/windows.js — draggable, resizable windows */
 (function (NW) {
   'use strict';
   var U = NW.util, el = U.el;
@@ -8,24 +8,24 @@
   var z = 100;
   var cascade = 0;
 
-  function init() { root = U.$('#windows'); }
+  function init() {
+    root = U.$('#windows');
+    window.addEventListener('resize', keepOnScreen);
+  }
 
   function bounds() {
     var ws = U.$('#workspace');
     return { w: ws.clientWidth, h: ws.clientHeight };
   }
 
-  /**
-   * open({id, title, w, h, x, y, min:[w,h], resizable, onClose, build(bodyEl, win)})
-   */
+  /** open({id, title, w, h, x, y, min:[w,h], resizable, small, tint, onClose, build(body, win)}) */
   function open(spec) {
     if (!root) init();
     var id = spec.id;
     if (wins[id]) { focus(id); return wins[id]; }
 
     var b = bounds();
-    // Programs open comfortably large: never smaller than their authored size,
-    // never smaller than a good fraction of the desk, never off the screen.
+    // at least the authored size or a good share of the desk, never off screen
     var wantW = spec.small ? (spec.w || 520) : Math.max(spec.w || 640, Math.round(b.w * 0.44));
     var wantH = spec.small ? (spec.h || 420) : Math.max(spec.h || 420, Math.round(b.h * 0.72));
     var w = Math.min(wantW, b.w - 24);
@@ -53,17 +53,26 @@
     if (spec.resizable !== false) node.appendChild(el('div.win-resize'));
     if (spec.tint) node.style.setProperty('--phos', spec.tint);
 
+    var cleanups = [];
     var win = {
       id: id, node: node, body: body, spec: spec,
       minimised: false, maximised: false, prev: null,
       setTitle: function (t) { titleName.textContent = t; },
       close: function () { close(id); },
-      focus: function () { focus(id); }
+      focus: function () { focus(id); },
+      /** Bus subscription that ends when the window closes. */
+      listen: function (ev, fn) { cleanups.push(NW.bus.on(ev, fn)); },
+      /** Run fn when the window closes. */
+      onClose: function (fn) { cleanups.push(fn); },
+      _cleanup: function () {
+        cleanups.forEach(function (fn) { try { fn(); } catch (e) { console.error(e); } });
+        cleanups = [];
+      }
     };
     wins[id] = win;
     root.appendChild(node);
 
-    // drag
+    // drag by the title bar
     var sx, sy;
     U.drag(titleBar, function (e) {
       if (e.target.closest('.win-btn')) return false;
@@ -76,7 +85,7 @@
       node.style.top = U.clamp(sy + dy, 0, bb.h - 24) + 'px';
     });
 
-    // resize
+    // resize from the corner
     var rz = node.querySelector('.win-resize');
     if (rz) {
       var sw, sh;
@@ -116,17 +125,22 @@
   function close(id) {
     var win = wins[id]; if (!win) return;
     if (win.spec.onClose && win.spec.onClose(win) === false) return;
+    win._cleanup();
     win.node.classList.add('closing');
     NW.audio.play('close');
     setTimeout(function () { if (win.node.parentNode) win.node.parentNode.removeChild(win.node); }, 130);
     delete wins[id];
     NW.bus.emit('win:close', { id: id });
+    // hand focus to whatever is now on top
+    var top = topmost();
+    if (top) focus(top.id);
   }
 
   function minimise(id) {
     var win = wins[id]; if (!win) return;
     win.minimised = true;
     win.node.classList.add('hidden');
+    win.node.classList.remove('focused');
     NW.bus.emit('win:min', win);
   }
 
@@ -146,11 +160,39 @@
     NW.bus.emit('win:resize', win);
   }
 
+  /** Pull windows back into view after the browser window shrinks. */
+  function keepOnScreen() {
+    var b = bounds();
+    all().forEach(function (win) {
+      var n = win.node;
+      if (win.maximised) {
+        n.style.width = b.w + 'px'; n.style.height = b.h + 'px';
+        NW.bus.emit('win:resize', win);
+        return;
+      }
+      n.style.left = U.clamp(n.offsetLeft, -n.offsetWidth + 90, Math.max(0, b.w - 60)) + 'px';
+      n.style.top = U.clamp(n.offsetTop, 0, Math.max(0, b.h - 24)) + 'px';
+    });
+  }
+
+  function topmost() {
+    var best = null;
+    all().forEach(function (w) {
+      if (w.minimised) return;
+      if (!best || (+w.node.style.zIndex) > (+best.node.style.zIndex)) best = w;
+    });
+    return best;
+  }
+
   function get(id) { return wins[id]; }
   function isOpen(id) { return !!wins[id]; }
   function all() { return Object.keys(wins).map(function (k) { return wins[k]; }); }
   function closeAll() { Object.keys(wins).forEach(close); }
+  function focused() {
+    return all().filter(function (w) { return w.node.classList.contains('focused'); })[0] || null;
+  }
 
   NW.win = { init: init, open: open, close: close, focus: focus, minimise: minimise,
-             toggleMax: toggleMax, get: get, isOpen: isOpen, all: all, closeAll: closeAll };
+             toggleMax: toggleMax, get: get, isOpen: isOpen, all: all, closeAll: closeAll,
+             focused: focused };
 })(window.NW);

@@ -42,6 +42,8 @@ If you are stuck, the ASSIST button gives you hints, starting small.
 
 Use headphones, because some sounds are part of the puzzles. If your browser does not save progress for local files, you can copy a save code in the CONFIG program and paste it back in later.
 
+The keyboard works too: number keys pick a reply on the WIRE, Enter and Escape answer pop-ups, Escape closes the front window, F1 opens ASSIST, the SWITCHBOARD dials typed numbers, and Tab completes file names in the SHELL.
+
 ## How it is made
 
 It is plain HTML, CSS and JavaScript with no libraries and no image or sound files. Everything is made in code while you play: the fingerprints, the faces, the photos and the sounds. Even the keyboard clicks are synthesized. The story and all the documents are stored as data, so a new case could be added without changing the game engine.

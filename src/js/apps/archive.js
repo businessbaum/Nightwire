@@ -1,4 +1,4 @@
-/* NIGHTWIRE — apps/archive.js — document archive, rendered as scanned paper */
+/* NIGHTWIRE — apps/archive.js — case documents, rendered as scanned paper */
 (function (NW) {
   'use strict';
   var U = NW.util, el = U.el;
@@ -8,7 +8,7 @@
 
   function reEsc(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
-  /** Ring the terms a previous reader would have ringed. */
+  /** Highlight a document's key terms. */
   function markTerms(root, terms) {
     if (!terms || !terms.length) return;
     var re = new RegExp('(' + terms.map(reEsc).join('|') + ')', 'gi');
@@ -59,7 +59,8 @@
       years.forEach(function (y) {
         list.appendChild(el('div.sec-h', { text: y }));
         groups[y].forEach(function (d) {
-          var row = el('div.lrow', { class: st.sel === d.id ? 'sel' : '' }, [
+          var unread = !NW.state.has('read_' + d.id);
+          var row = el('div.lrow', { class: (st.sel === d.id ? 'sel ' : '') + (unread ? 'unread' : ''), title: unread ? 'Not read yet' : '' }, [
             el('div.lr-t', { text: d.title }),
             el('div.lr-s', { text: d.date + ' · ' + d.source })
           ]);
@@ -69,13 +70,14 @@
       });
     }
 
-    function show(id) {
+    function show(id, keepScroll) {
       var d = NW.documents.get(id);
       if (!d) return;
       st.sel = id;
       NW.state.unlock('docs', id, true);
       NW.state.flag('read_' + id, true);
-      NW.audio.play('page');
+      if (!keepScroll) NW.audio.play('page');
+      var y = pane.scrollTop;
       U.clear(pane);
       var sheet = el('div.paper' + (d.paperClass ? '.' + d.paperClass : ''), { html: d.html() });
       if (d.paperClass === 'telex') {
@@ -98,10 +100,17 @@
       });
       bar.appendChild(pin);
       pane.appendChild(bar);
-      pane.scrollTop = 0;
+      pane.scrollTop = keepScroll ? y : 0;
       renderList();
-      NW.bus.emit('doc:read', d.id);
+      if (!keepScroll) NW.bus.emit('doc:read', d.id);
     }
+
+    function refreshDoc() { if (st.sel && pane.querySelector('.paper')) show(st.sel, true); }
+
+    // new documents appear straight away; the transmit button follows the open request
+    win.listen('unlock', function (e) { if (e.kind === 'docs') renderList(); });
+    win.listen('request:open', refreshDoc);
+    win.listen('request:close', refreshDoc);
 
     U.on(input, 'input', function () { st.q = input.value; renderList(); });
     win.showDoc = show;
@@ -109,6 +118,11 @@
     if (arg && NW.documents.get(arg)) show(arg);
     else pane.appendChild(el('div.empty', { html: 'CASE DOCUMENT ARCHIVE<br><br>SELECT A FILE FROM THE INDEX.' }));
   }
+
+  // count documents that arrive while the archive is closed on its rail icon
+  NW.bus.on('unlock', function (e) {
+    if (e.kind === 'docs' && !NW.win.isOpen('archive') && NW.apps.isUnlocked('archive')) NW.apps.bumpBadge('archive');
+  });
 
   NW.apps.define({
     id: 'archive', name: 'ARCHIVE', short: 'FILES', icon: 'archive',

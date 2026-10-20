@@ -1,6 +1,4 @@
-/* NIGHTWIRE — engine/state.js
-   Single source of truth. Anything the player has learned, done, or broken
-   lives here and nowhere else. */
+/* NIGHTWIRE — engine/state.js — all game state, plus save/load and settings */
 (function (NW) {
   'use strict';
   var U = NW.util;
@@ -107,7 +105,7 @@
   }
 
   /* ── persistence ───────────────────────────── */
-  /** A message caught mid-type must not be written to disk half-said. */
+  /** Don't write a message to disk half-typed. */
   function settle() {
     Object.keys(S.threads).forEach(function (k) {
       (S.threads[k].msgs || []).forEach(function (m) {
@@ -127,16 +125,21 @@
     } catch (e) { return false; }
   }
 
+  /** Replace the state with a parsed save. Missing keys fall back to fresh values. */
+  function restore(json) {
+    try {
+      var o = JSON.parse(json);
+      if (!o || o.v !== 1) return false;
+      S = Object.assign(fresh(), o);
+      return true;
+    } catch (e) { return false; }
+  }
+
   function load(slot) {
     if (!storageOK) return false;
     try {
       var raw = window.localStorage.getItem(KEY + (slot ? '.' + slot : ''));
-      if (!raw) return false;
-      var o = JSON.parse(raw);
-      if (!o || o.v !== 1) return false;
-      S = Object.assign(fresh(), o);
-      NW.state.s = S;
-      return true;
+      return !!raw && restore(raw);
     } catch (e) { return false; }
   }
 
@@ -147,19 +150,13 @@
 
   function wipe() {
     if (storageOK) { try { window.localStorage.removeItem(KEY); } catch (e) {} }
-    S = fresh(); NW.state.s = S;
+    S = fresh();
   }
 
   function exportCode() { return U.encode(serialize()); }
   function importCode(code) {
     var json = U.decode(String(code).replace(/\s+/g, ''));
-    if (!json) return false;
-    try {
-      var o = JSON.parse(json);
-      if (!o || o.v !== 1) return false;
-      S = Object.assign(fresh(), o); NW.state.s = S;
-      return true;
-    } catch (e) { return false; }
+    return !!json && restore(json);
   }
 
   function saveSettings() {
@@ -178,7 +175,7 @@
     get s() { return S; },
     set s(v) { S = v; },
     settings: function () { return settings; },
-    fresh: function () { S = fresh(); NW.state.s = S; return S; },
+    fresh: function () { S = fresh(); return S; },
     flag: flag, has: has, bump: bump, count: count,
     unlock: unlock, unlocked: unlocked,
     addEvidence: addEvidence, hasEvidence: hasEvidence, addFact: addFact,

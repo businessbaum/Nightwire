@@ -1,6 +1,4 @@
-/* NIGHTWIRE — data/places.js
-   Vandermeer County. Coordinates are in a 0..1000 local grid; the map program
-   draws roads, water and terrain procedurally from this table. */
+/* NIGHTWIRE — data/places.js — map data for CARTOGRAPH, on a 0..1000 grid */
 (function (NW) {
   'use strict';
 

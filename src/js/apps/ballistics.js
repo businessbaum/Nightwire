@@ -21,8 +21,8 @@
     return out.sort(function (a, b) { return a.y - b.y; });
   }
 
-  function build(body) {
-    var v = { ref: null, offset: 0, done: {} };
+  function build(body, win) {
+    var v = { ref: null, offset: 0 };
     var W = 460, H = 460;
 
     var tools = el('div.toolbar');
@@ -38,7 +38,7 @@
       tools.appendChild(el('span.tb-title', { text: 'EXHIBIT M-1 vs.' }));
       REFS.forEach(function (r) {
         var b = el('button.btn', { text: r.id, class: v.ref === r.id ? 'on' : '', title: r.label });
-        U.on(b, 'click', function () { v.ref = r.id; v.offset = 0; slide.value = 0; NW.audio.play('disk'); renderTools(); draw(); renderCtrl(); });
+        U.on(b, 'click', function () { v.ref = r.id; v.offset = 0; slide.value = 0; NW.audio.play('disk'); renderTools(); draw(); updateCtrl(); });
         tools.appendChild(b);
       });
     }
@@ -46,7 +46,7 @@
     function currentRef() { return REFS.filter(function (r) { return r.id === v.ref; })[0]; }
     function isMatch() { var r = currentRef(); return r && r.seed === EVIDENCE_SEED; }
 
-    /** True offset for a matching reference (mounting difference). */
+    /** Mounting offset of the matching reference (about +170 µm). */
     function trueOffset() { return 0.17; }
 
     function score() {
@@ -122,46 +122,48 @@
       g.globalAlpha = 1;
     }
 
+    // built once and updated in place; rebuilding would break the slider drag
     var slide = el('input', { type: 'range', min: -0.4, max: 0.4, step: 0.002, value: 0, style: { flex: '1' } });
-    U.on(slide, 'input', function () { v.offset = parseFloat(slide.value); draw(); renderCtrl(); });
+    U.on(slide, 'input', function () { v.offset = parseFloat(slide.value); draw(); updateCtrl(); });
+    var offLbl = el('span', { class: 'dim', style: { width: '60px', textAlign: 'right', fontSize: '10px' } });
+    var meterFill = el('i');
+    var meterTxt = el('span');
+    var meter = el('div.meter', { style: { flex: '1' } }, [meterFill, meterTxt]);
+    var msg = el('div', { class: 'dim', style: { fontSize: '11px', margin: '8px 0' } });
+    var idBtn = el('button.btn.good', { text: '▣ RECORD IDENTIFICATION' });
+    U.on(idBtn, 'click', conclude);
+    var exBtn = el('button.btn.danger', { text: '▢ ELIMINATE' });
+    U.on(exBtn, 'click', function () {
+      if (isMatch()) { NW.audio.play('error'); NW.notify.push({ head: 'ERROR', body: 'That reference agrees. Traverse the stage properly.', kind: 'bad' }); return; }
+      NW.audio.play('ok');
+      NW.state.addFact('BALLISTICS', currentRef().label + ' eliminated as the source of M-1.');
+      NW.notify.push({ head: 'ELIMINATED', body: v.ref, kind: 'info' });
+    });
 
-    var readout = el('div');
-    function renderCtrl() {
-      U.clear(ctrl);
-      ctrl.appendChild(el('div', { style: { display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '8px' } }, [
-        el('span', { class: 'dim', style: { fontSize: '9px', letterSpacing: '.18em', width: '118px' }, text: 'STAGE TRAVERSE' }),
-        slide,
-        el('span', { class: 'dim', style: { width: '60px', textAlign: 'right', fontSize: '10px' }, text: (v.offset * 1000).toFixed(0) + ' µm' })
-      ]));
+    ctrl.appendChild(el('div', { style: { display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '8px' } }, [
+      el('span', { class: 'dim', style: { fontSize: '9px', letterSpacing: '.18em', width: '118px' }, text: 'STAGE TRAVERSE' }),
+      slide, offLbl
+    ]));
+    ctrl.appendChild(el('div', { style: { display: 'flex', gap: '12px', alignItems: 'center' } }, [
+      el('span', { class: 'dim', style: { fontSize: '9px', letterSpacing: '.18em', width: '118px' }, text: 'STRIAE IN AGREEMENT' }),
+      meter
+    ]));
+    ctrl.appendChild(msg);
+    ctrl.appendChild(el('div', { style: { display: 'flex', gap: '8px' } }, [idBtn, exBtn]));
+
+    function updateCtrl() {
       var n = score();
-      var pct = Math.min(100, Math.round(n / 18 * 100));
-      ctrl.appendChild(el('div', { style: { display: 'flex', gap: '12px', alignItems: 'center' } }, [
-        el('span', { class: 'dim', style: { fontSize: '9px', letterSpacing: '.18em', width: '118px' }, text: 'STRIAE IN AGREEMENT' }),
-        el('div.meter', { class: n >= 14 ? 'good' : n < 6 ? 'bad' : '', style: { flex: '1' } }, [
-          el('i', { style: { width: pct + '%' } }), el('span', { text: n + ' CONSECUTIVE' })
-        ])
-      ]));
-      var msg = el('div', { class: 'dim', style: { fontSize: '11px', margin: '8px 0' } });
+      offLbl.textContent = (v.offset * 1000).toFixed(0) + ' µm';
+      meter.className = 'meter' + (n >= 14 ? ' good' : n < 6 ? ' bad' : '');
+      meterFill.style.width = Math.min(100, Math.round(n / 18 * 100)) + '%';
+      meterTxt.textContent = n + ' IN AGREEMENT';
       if (!v.ref) msg.textContent = 'Mount a known reference, then traverse the stage until the striae run through the seam.';
       else if (n >= 14) msg.innerHTML = '<span style="color:var(--green)">SUFFICIENT AGREEMENT — IDENTIFICATION.</span>';
       else msg.textContent = 'Traverse slowly. When the lines cross the seam unbroken, you are on it.';
-      ctrl.appendChild(msg);
-
-      var bar = el('div', { style: { display: 'flex', gap: '8px' } });
-      var id = el('button.btn.good', { text: '▣ RECORD IDENTIFICATION' });
-      id.disabled = n < 14;
-      U.on(id, 'click', conclude);
-      bar.appendChild(id);
-      var ex = el('button.btn.danger', { text: '▢ ELIMINATE' });
-      ex.disabled = !v.ref;
-      U.on(ex, 'click', function () {
-        if (isMatch()) { NW.audio.play('error'); NW.notify.push({ head: 'ERROR', body: 'That reference agrees. Traverse the stage properly.', kind: 'bad' }); return; }
-        NW.audio.play('ok');
-        NW.state.addFact('BALLISTICS', currentRef().label + ' eliminated as the source of M-1.');
-        NW.notify.push({ head: 'ELIMINATED', body: v.ref, kind: 'info' });
-      });
-      bar.appendChild(ex);
-      ctrl.appendChild(bar);
+      var done = NW.state.has('ballistics_done');
+      idBtn.disabled = n < 14 || (done && isMatch());
+      idBtn.textContent = done && isMatch() ? '✓ IDENTIFICATION RECORDED' : '▣ RECORD IDENTIFICATION';
+      exBtn.disabled = !v.ref;
     }
 
     function conclude() {
@@ -179,9 +181,11 @@
                'The schedule is signed by the Deputy Chief.'],
         buttons: [{ label: 'OPEN THE SCHEDULE', value: 'doc' }, { label: 'LOG IT', value: null }]
       }).then(function (x) { if (x === 'doc') NW.apps.open('archive', 'd_nc88_lease'); });
+      updateCtrl();
     }
 
-    renderTools(); draw(); renderCtrl();
+    win.listen('theme', draw);
+    renderTools(); draw(); updateCtrl();
   }
 
   NW.apps.define({

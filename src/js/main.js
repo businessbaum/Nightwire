@@ -1,10 +1,10 @@
-/* NIGHTWIRE — main.js — wiring */
+/* NIGHTWIRE — main.js — hints, status bar, input, autosave and start-up */
 (function (NW) {
   'use strict';
   var U = NW.util, el = U.el;
   var S = function () { return NW.state.s; };
 
-  /* ══════════ ASSIST (contextual hints) ══════════ */
+  /* ══════════ ASSIST (contextual hints, three levels each) ══════════ */
   var HINTS = [
     { when: { not: ['certified'] }, q: 'What am I supposed to be doing?',
       a: ['Solt is running you through three certification queries on the WIRE. Open REGISTRY from the left rail and answer them.',
@@ -46,6 +46,11 @@
           'Each site gives you an annulus — a ring with a tolerance. The answer is the only point inside all three rings.',
           'It is the Marrow Street paper mill, west of centre on the map, on the Marrow Street road.'] },
 
+    { when: { all: ['ch3'], not: ['ch3_exit_right', 'ch3_exit_wrong'] }, q: 'What should I know about the mill before they go in?',
+      a: ['The night watchman, Marcus Trevino, has been calling that building in for two years. His number is in the sheriff\'s dispatch log.',
+          'Dial 555-0277 in SWITCHBOARD and ask him about the light in the old office.',
+          'The open bay is covered; use the chained side door. If the man runs, he goes down the fire escape on the north gable.'] },
+
     { when: { all: ['ch4'], not: ['ballistics_done'] }, q: 'The comparison microscope will not agree.',
       a: ['Mount each reference in turn and drag the STAGE TRAVERSE slider slowly. When the striae run unbroken across the centre seam you are on it.',
           'Three of the four references will never agree at any offset. One will.',
@@ -65,6 +70,11 @@
       a: ['County records keeps corporate filings and leases, and the deputy clerk answers the phone after hours.',
           'Dial 555-0122 in SWITCHBOARD.',
           'Ask for the Alden Civic Holdings filings first, then the Grieve Hill lease. Then ask who Bellamy is.'] },
+
+    { when: { minChapter: 5, not: ['guided_well', 'guided_slow', 'guided_wait'] }, q: 'Where in Grieve Hill is ward seventeen?',
+      a: ['The lease for Grieve Hill describes the buildings, and only one of them has power.',
+          'Get the Grieve Hill lease abstract into the ARCHIVE — Patrice Moss at county records (555-0122) has it, and so does the 1994 reel in MICROFILM.',
+          'Wards 11 to 18 are on the first floor of the north wing of Building B. Follow the lit windows.'] },
 
     { when: { minChapter: 1 }, q: 'How do I answer a request from the field?',
       a: ['An open request appears at the bottom of the WIRE window with empty slots.',
@@ -139,7 +149,7 @@
     }, 4000);
   }
 
-  /* disk LED flicker on activity */
+  /* disk LED flickers on activity */
   ['evidence', 'unlock', 'doc:read', 'registry:open', 'wire:msg'].forEach(function (ev) {
     NW.bus.on(ev, function () {
       var l = U.$('#tb-hdd');
@@ -149,29 +159,35 @@
     });
   });
 
-  /* auto-save */
+  /* autosave: at each chapter, every 45 s, and when the tab is hidden or closed.
+     The timed saves skip chapter 0, so the blank state behind the resume
+     prompt can never overwrite a real save. */
+  function autosave() { if (S().chapter > 0 && !S().flags.game_over) NW.state.save(); }
   NW.bus.on('chapter', function () { NW.state.save(); });
-  setInterval(function () { if (S().chapter > 0 && !S().flags.game_over) NW.state.save(); }, 45000);
+  setInterval(autosave, 45000);
+  window.addEventListener('pagehide', autosave);
+  document.addEventListener('visibilitychange', function () { if (document.hidden) autosave(); });
 
-  /* ══════════ the physical layer ══════════
-     Every key and every button on this desk makes a noise. Capture phase, so
-     it fires no matter which field has focus. */
+  /* every key and mouse button clicks; capture phase so focus doesn't matter */
   document.addEventListener('keydown', function (e) {
-    if (e.repeat) return;               // holding a switch down does not re-click it
+    if (e.repeat) return;
     NW.audio.keyDown(e.key);
   }, true);
   document.addEventListener('keyup', function (e) { NW.audio.keyUp(e.key); }, true);
   document.addEventListener('mousedown', function () { NW.audio.mouseDown(); }, true);
   document.addEventListener('mouseup', function () { NW.audio.mouseUp(); }, true);
 
-  /* keyboard */
+  /* keyboard: F1 help, Escape closes the front window, other keys go to the front program */
   document.addEventListener('keydown', function (e) {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-    if (e.key === 'F1') { e.preventDefault(); openAssist(); }
-    if (e.key === 'Escape') {
-      var f = NW.win.all().filter(function (w) { return w.node.classList.contains('focused'); })[0];
-      if (f) NW.win.close(f.id);
-    }
+    if (NW.notify.overlayOpen()) return;
+    var tag = e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (e.key === 'F1') { e.preventDefault(); openAssist(); return; }
+    var f = NW.win.focused();
+    if (!f) return;
+    if (e.key === 'Escape') { NW.win.close(f.id); return; }
+    if (e.ctrlKey || e.altKey || e.metaKey) return;
+    if (f.app && f.app.onKey && f.app.onKey(e, f)) e.preventDefault();
   });
 
   /* ══════════ start ══════════ */
@@ -182,7 +198,7 @@
     NW.apps.renderRail();
     wireStatus();
 
-    // resume?
+    // a shift is saved: offer to resume it
     if (NW.state.hasSave()) {
       var layer = U.$('#boot-layer');
       layer.classList.remove('hidden');
